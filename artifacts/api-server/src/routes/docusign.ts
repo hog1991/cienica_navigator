@@ -73,19 +73,44 @@ router.get("/docusign/document", async (req: Request, res: Response) => {
   }
 
   // Build full URL — href may be relative (e.g. /accounts/…) or absolute
-  const fullUrl = href.startsWith("http")
+  const isAbsolute = href.startsWith("http");
+  const fullUrl = isAbsolute
     ? href
     : `https://api-d.docusign.com/v1${href.startsWith("/") ? "" : "/"}${href}`;
 
   const filename = (req.query["filename"] as string | undefined) ?? "agreement.pdf";
 
   try {
-    const apiRes = await fetch(fullUrl, {
-      headers: { Authorization: `Bearer ${tokenRecord.accessToken}` },
-    });
+    // Pre-signed DMS/SAS URLs (absolute) must NOT have an Authorization header —
+    // the signature is embedded in the URL and adding a Bearer token breaks it.
+    // Relative API paths (Navigator API) do need the Bearer token.
+    const fetchHeaders: Record<string, string> = isAbsolute
+      ? {}
+      : { Authorization: `Bearer ${tokenRecord.accessToken}` };
+
+    const apiRes = await fetch(fullUrl, { headers: fetchHeaders });
 
     if (!apiRes.ok) {
-      req.log.warn({ status: apiRes.status, fullUrl }, "Document download failed");
+      // If the bare fetch failed, retry with the Bearer token in case the URL
+      // is an absolute DocuSign API endpoint rather than a SAS URL.
+      if (isAbsolute && apiRes.status === 401) {
+        const retryRes = await fetch(fullUrl, {
+          headers: { Authorization: `Bearer ${tokenRecord.accessToken}` },
+        });
+        if (!retryRes.ok) {
+          req.log.warn({ status: retryRes.status, fullUrl }, "Document download failed after retry");
+          res.status(retryRes.status).json({ error: "Document download failed", status: retryRes.status });
+          return;
+        }
+        const ct = retryRes.headers.get("content-type") ?? "application/octet-stream";
+        const cl = retryRes.headers.get("content-length");
+        res.setHeader("Content-Type", ct);
+        res.setHeader("Content-Disposition", `attachment; filename="${filename.replace(/"/g, "'")}"`);
+        if (cl) res.setHeader("Content-Length", cl);
+        res.send(Buffer.from(await retryRes.arrayBuffer()));
+        return;
+      }
+      req.log.warn({ status: apiRes.status, fullUrl, isAbsolute }, "Document download failed");
       res.status(apiRes.status).json({ error: "Document download failed", status: apiRes.status });
       return;
     }
