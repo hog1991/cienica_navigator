@@ -1,10 +1,16 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Table,
   TableBody,
@@ -23,9 +29,9 @@ import {
   Clock,
   XCircle,
   Filter,
-  ShieldCheck,
-  ShieldAlert,
-  Info,
+  LogOut,
+  User,
+  ExternalLink,
 } from "lucide-react";
 
 const API_BASE = "/api";
@@ -52,13 +58,14 @@ interface AgreementsResponse {
 }
 
 interface AuthStatus {
-  mode: "direct_token" | "jwt" | "unconfigured";
+  authenticated: boolean;
   accountId: string | null;
-  configured: boolean;
-  instructions: string | null;
+  user?: { name?: string; email?: string } | null;
 }
 
-function statusBadgeVariant(status?: string): "default" | "secondary" | "destructive" | "outline" {
+function statusBadgeVariant(
+  status?: string,
+): "default" | "secondary" | "destructive" | "outline" {
   const s = (status ?? "").toLowerCase();
   if (s.includes("active") || s.includes("complete") || s.includes("signed")) return "default";
   if (s.includes("draft") || s.includes("pending") || s.includes("sent")) return "secondary";
@@ -94,88 +101,140 @@ function extractAgreements(data: AgreementsResponse): Agreement[] {
   return data.agreements ?? data.data ?? data.items ?? [];
 }
 
-function AuthBanner({ status }: { status: AuthStatus | null }) {
-  if (!status) return null;
+function ConnectScreen({
+  onSuccess,
+  accountId,
+}: {
+  onSuccess: () => void;
+  accountId: string | null;
+}) {
+  const [connecting, setConnecting] = useState(false);
+  const popupRef = useRef<Window | null>(null);
 
-  if (status.configured) {
-    return (
-      <div className="flex items-center gap-2 px-4 py-2.5 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800 mb-5">
-        <ShieldCheck className="w-4 h-4 text-green-600 shrink-0" />
-        <span>
-          Authenticated via{" "}
-          <strong>{status.mode === "direct_token" ? "Access Token" : "JWT Grant"}</strong>
-          {status.accountId ? ` · Account ${status.accountId}` : ""}
-        </span>
-      </div>
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === "docusign-auth-success") {
+        setConnecting(false);
+        onSuccess();
+      }
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, [onSuccess]);
+
+  const handleConnect = () => {
+    setConnecting(true);
+    const w = 520;
+    const h = 660;
+    const left = Math.max(0, (screen.width - w) / 2);
+    const top = Math.max(0, (screen.height - h) / 2);
+    const popup = window.open(
+      `${API_BASE}/docusign/auth/start`,
+      "docusign-oauth",
+      `width=${w},height=${h},left=${left},top=${top},toolbar=no,menubar=no,scrollbars=yes`,
     );
-  }
+    popupRef.current = popup;
+
+    const timer = setInterval(() => {
+      if (popup?.closed) {
+        clearInterval(timer);
+        setConnecting(false);
+      }
+    }, 500);
+  };
 
   return (
-    <Alert className="mb-5 border-amber-200 bg-amber-50">
-      <ShieldAlert className="h-4 w-4 text-amber-600" />
-      <AlertTitle className="text-amber-800 font-semibold">Authentication not configured</AlertTitle>
-      <AlertDescription className="text-amber-700 mt-1 space-y-2">
-        <p>
-          To fetch agreements, configure one of these authentication methods in your Replit Secrets:
-        </p>
-        <div className="mt-2 space-y-3">
-          <div className="bg-white/70 rounded-md p-3 border border-amber-200">
-            <p className="font-semibold text-amber-900 text-xs uppercase tracking-wide mb-1">
-              Option A — Quick testing (Access Token)
-            </p>
-            <p className="text-xs">
-              Add <code className="bg-amber-100 px-1 rounded font-mono">DOCUSIGN_ACCESS_TOKEN</code>{" "}
-              — get a short-lived token from your Docusign developer sandbox using the OAuth Playground
-              or Postman.
-            </p>
-          </div>
-          <div className="bg-white/70 rounded-md p-3 border border-amber-200">
-            <p className="font-semibold text-amber-900 text-xs uppercase tracking-wide mb-1">
-              Option B — JWT Grant (Recommended for production)
-            </p>
-            <p className="text-xs mb-1">
-              Add these three secrets to use server-to-server JWT authentication:
-            </p>
-            <ul className="text-xs space-y-0.5 font-mono">
-              <li>
-                <code className="bg-amber-100 px-1 rounded">DOCUSIGN_USER_ID</code> — your Docusign
-                user API ID (from account settings)
-              </li>
-              <li>
-                <code className="bg-amber-100 px-1 rounded">DOCUSIGN_PRIVATE_KEY</code> — RSA private
-                key configured in your Integration Key
-              </li>
-            </ul>
-            <p className="text-xs mt-1 text-amber-600">
-              Note: You must also grant consent at:
-              https://account-d.docusign.com/oauth/auth?response_type=code&scope=adm_store_unified_repo_read&client_id=YOUR_CLIENT_ID&redirect_uri=https://developers.docusign.com/platform/auth/authcode/
-            </p>
-          </div>
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-10 max-w-md w-full text-center">
+        <div className="w-16 h-16 rounded-2xl bg-[#1B1E2E] flex items-center justify-center mx-auto mb-6">
+          <FileText className="w-8 h-8 text-white" />
         </div>
-      </AlertDescription>
-    </Alert>
+
+        <h1 className="text-2xl font-semibold text-gray-900 mb-2">
+          Docusign Navigator
+        </h1>
+        <p className="text-sm text-gray-500 mb-8">
+          Connect your Docusign account to browse and search agreements
+          from the Navigator API.
+        </p>
+
+        {accountId && (
+          <div className="mb-6 flex items-center justify-center gap-2 text-xs text-gray-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />
+            Account {accountId} configured
+          </div>
+        )}
+
+        <Button
+          size="lg"
+          className="w-full gap-2 bg-[#1B1E2E] hover:bg-[#2b3050] text-white h-11 text-sm font-medium"
+          onClick={handleConnect}
+          disabled={connecting}
+        >
+          {connecting ? (
+            <>
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              Waiting for authorization...
+            </>
+          ) : (
+            <>
+              <ExternalLink className="w-4 h-4" />
+              Connect with Docusign
+            </>
+          )}
+        </Button>
+
+        {connecting && (
+          <p className="mt-3 text-xs text-gray-400">
+            A popup opened for you to sign in. Allow popups if blocked.
+          </p>
+        )}
+
+        <div className="mt-8 pt-6 border-t border-gray-100 text-left space-y-3">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            What this does
+          </p>
+          <ul className="space-y-1.5">
+            {[
+              "Opens a secure Docusign login popup",
+              "Requests read access to your Navigator agreements",
+              "Exchanges your authorization for an access token",
+              "Lets you fetch and search all your agreements",
+            ].map((item) => (
+              <li key={item} className="flex items-start gap-2 text-xs text-gray-500">
+                <CheckCircle2 className="w-3.5 h-3.5 text-green-500 mt-0.5 shrink-0" />
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
   );
 }
 
-export function AgreementsList() {
+function AgreementsView({
+  auth,
+  onLogout,
+}: {
+  auth: AuthStatus;
+  onLogout: () => void;
+}) {
   const [agreements, setAgreements] = useState<Agreement[]>([]);
   const [rawResponse, setRawResponse] = useState<AgreementsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fetched, setFetched] = useState(false);
-  const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [limitFilter, setLimitFilter] = useState("25");
   const [viewMode, setViewMode] = useState<"table" | "raw">("table");
 
-  useEffect(() => {
-    fetch(`${API_BASE}/docusign/auth-status`)
-      .then((r) => r.json())
-      .then((data) => setAuthStatus(data as AuthStatus))
-      .catch(() => {});
-  }, []);
+  const handleLogout = async () => {
+    await fetch(`${API_BASE}/docusign/auth/logout`, { method: "POST" });
+    onLogout();
+  };
 
   const fetchAgreements = useCallback(async () => {
     setLoading(true);
@@ -193,12 +252,8 @@ export function AgreementsList() {
       const json = (await res.json()) as AgreementsResponse;
 
       if (!res.ok) {
-        const msg =
-          (json as { error?: string }).error ?? `Request failed with status ${res.status}`;
-        setError(msg);
-
-        const details = (json as { instructions?: string }).instructions;
-        if (details) setError(`${msg}\n\n${details}`);
+        const errJson = json as { error?: string };
+        setError(errJson.error ?? `Request failed with status ${res.status}`);
         setLoading(false);
         return;
       }
@@ -213,31 +268,56 @@ export function AgreementsList() {
     }
   }, [search, statusFilter, limitFilter]);
 
+  const displayName = auth.user?.name ?? auth.user?.email ?? null;
+
   return (
     <div className="min-h-screen bg-gray-50 font-sans">
       <div className="max-w-7xl mx-auto px-6 py-8">
         {/* Header */}
-        <div className="mb-6">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-9 h-9 rounded-lg bg-[#1B1E2E] flex items-center justify-center">
-              <FileText className="w-5 h-5 text-white" />
+        <div className="flex items-start justify-between mb-8">
+          <div>
+            <div className="flex items-center gap-3 mb-1.5">
+              <div className="w-9 h-9 rounded-lg bg-[#1B1E2E] flex items-center justify-center">
+                <FileText className="w-5 h-5 text-white" />
+              </div>
+              <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">
+                Navigator Agreements
+              </h1>
             </div>
-            <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">
-              Navigator Agreements
-            </h1>
+            <p className="text-sm text-gray-500 ml-12">
+              Browse and search agreements via the Docusign Navigator API
+            </p>
           </div>
-          <p className="text-sm text-gray-500 ml-12">
-            Fetch and browse agreements from the Docusign Navigator API
-          </p>
-        </div>
 
-        <AuthBanner status={authStatus} />
+          {/* User + Logout */}
+          <div className="flex items-center gap-3">
+            {displayName && (
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <div className="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center">
+                  <User className="w-4 h-4 text-gray-500" />
+                </div>
+                <span className="hidden sm:block">{displayName}</span>
+              </div>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-gray-600 h-8"
+              onClick={() => void handleLogout()}
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              Disconnect
+            </Button>
+          </div>
+        </div>
 
         {/* Controls */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 mb-6">
           <div className="flex items-end gap-3 flex-wrap">
             <div className="flex-1 min-w-[200px]">
-              <label className="block text-xs font-medium text-gray-600 mb-1.5">Search</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                Search
+              </label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <Input
@@ -255,7 +335,8 @@ export function AgreementsList() {
             <div className="w-40">
               <label className="block text-xs font-medium text-gray-600 mb-1.5">
                 <span className="flex items-center gap-1">
-                  <Filter className="w-3 h-3" /> Status
+                  <Filter className="w-3 h-3" />
+                  Status
                 </span>
               </label>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -276,7 +357,9 @@ export function AgreementsList() {
             </div>
 
             <div className="w-28">
-              <label className="block text-xs font-medium text-gray-600 mb-1.5">Limit</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                Limit
+              </label>
               <Select value={limitFilter} onValueChange={setLimitFilter}>
                 <SelectTrigger className="h-9 text-sm">
                   <SelectValue />
@@ -304,13 +387,8 @@ export function AgreementsList() {
             </Button>
           </div>
 
-          {/* Query params info */}
-          <div className="mt-3 pt-3 border-t border-gray-100 flex items-start gap-1.5 text-xs text-gray-400">
-            <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-            <span>
-              Calls <code className="font-mono text-gray-500">GET /v1/accounts/&#123;accountId&#125;/agreements</code>{" "}
-              · Supports: from_date, to_date, status, type, search_text, order_by, cursor pagination
-            </span>
+          <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-400 font-mono">
+            GET /v1/accounts/{auth.accountId}/agreements
           </div>
         </div>
 
@@ -318,41 +396,37 @@ export function AgreementsList() {
         {error && (
           <Alert variant="destructive" className="mb-5">
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription className="whitespace-pre-line font-medium">{error}</AlertDescription>
+            <AlertDescription className="font-medium">{error}</AlertDescription>
           </Alert>
         )}
 
-        {/* Results area */}
+        {/* Results */}
         {(fetched || loading) && (
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            {/* Toolbar */}
             <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100">
-              <div className="text-sm text-gray-500">
+              <span className="text-sm text-gray-500">
                 {loading ? (
                   "Loading..."
                 ) : (
                   <>
                     <span className="font-semibold text-gray-900">{agreements.length}</span>{" "}
                     agreement{agreements.length !== 1 ? "s" : ""}
-                    {rawResponse?.total ? (
+                    {rawResponse?.total != null && (
                       <span className="text-gray-400"> of {rawResponse.total} total</span>
-                    ) : null}
+                    )}
                   </>
                 )}
-              </div>
+              </span>
               <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
-                <button
-                  className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === "table" ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"}`}
-                  onClick={() => setViewMode("table")}
-                >
-                  Table
-                </button>
-                <button
-                  className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === "raw" ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"}`}
-                  onClick={() => setViewMode("raw")}
-                >
-                  Raw JSON
-                </button>
+                {(["table", "raw"] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setViewMode(m)}
+                    className={`px-3 py-1 rounded-md text-xs font-medium transition-colors capitalize ${viewMode === m ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"}`}
+                  >
+                    {m === "raw" ? "Raw JSON" : "Table"}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -371,63 +445,63 @@ export function AgreementsList() {
                 <FileText className="w-10 h-10 text-gray-300 mx-auto mb-3" />
                 <p className="text-sm text-gray-500 font-medium">No agreements found</p>
                 <p className="text-xs text-gray-400 mt-1">
-                  Try adjusting your filters or check your Docusign account
+                  Try adjusting your filters or check your Docusign Navigator account
                 </p>
               </div>
             ) : (
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
+                  <TableRow className="bg-gray-50/60 hover:bg-gray-50/60">
                     <TableHead className="text-xs font-semibold text-gray-600 w-[35%]">Name</TableHead>
                     <TableHead className="text-xs font-semibold text-gray-600">Status</TableHead>
                     <TableHead className="text-xs font-semibold text-gray-600">Type</TableHead>
                     <TableHead className="text-xs font-semibold text-gray-600">Parties</TableHead>
                     <TableHead className="text-xs font-semibold text-gray-600">Created</TableHead>
-                    <TableHead className="text-xs font-semibold text-gray-600">Last Modified</TableHead>
+                    <TableHead className="text-xs font-semibold text-gray-600">Modified</TableHead>
                     <TableHead className="w-8" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {agreements.map((agreement, idx) => (
-                    <TableRow key={agreement.id ?? idx} className="group">
+                  {agreements.map((ag, idx) => (
+                    <TableRow key={ag.id ?? idx} className="group">
                       <TableCell className="py-3">
                         <div className="flex items-center gap-2">
                           <FileText className="w-4 h-4 text-gray-400 shrink-0" />
-                          <span className="font-medium text-sm text-gray-900 truncate max-w-[250px]">
-                            {agreement.name ?? agreement.id ?? "Untitled"}
+                          <span className="font-medium text-sm text-gray-900 truncate max-w-[240px]">
+                            {ag.name ?? ag.id ?? "Untitled"}
                           </span>
                         </div>
                       </TableCell>
                       <TableCell>
-                        {agreement.status ? (
+                        {ag.status ? (
                           <Badge
-                            variant={statusBadgeVariant(agreement.status)}
+                            variant={statusBadgeVariant(ag.status)}
                             className="gap-1 text-xs font-medium"
                           >
-                            <StatusIcon status={agreement.status} />
-                            {agreement.status}
+                            <StatusIcon status={ag.status} />
+                            {ag.status}
                           </Badge>
                         ) : (
                           <span className="text-gray-400 text-sm">—</span>
                         )}
                       </TableCell>
                       <TableCell>
-                        <span className="text-sm text-gray-600">{agreement.type ?? "—"}</span>
+                        <span className="text-sm text-gray-600">{ag.type ?? "—"}</span>
                       </TableCell>
                       <TableCell>
-                        {agreement.parties && agreement.parties.length > 0 ? (
+                        {ag.parties && ag.parties.length > 0 ? (
                           <div className="flex flex-col gap-0.5">
-                            {agreement.parties.slice(0, 2).map((p, i) => (
-                              <span key={i} className="text-xs text-gray-600 truncate max-w-[150px]">
+                            {ag.parties.slice(0, 2).map((p, i) => (
+                              <span key={i} className="text-xs text-gray-600 truncate max-w-[140px]">
                                 {p.name}
-                                {p.role ? (
+                                {p.role && (
                                   <span className="text-gray-400"> · {p.role}</span>
-                                ) : null}
+                                )}
                               </span>
                             ))}
-                            {agreement.parties.length > 2 && (
+                            {ag.parties.length > 2 && (
                               <span className="text-xs text-gray-400">
-                                +{agreement.parties.length - 2} more
+                                +{ag.parties.length - 2} more
                               </span>
                             )}
                           </div>
@@ -437,12 +511,12 @@ export function AgreementsList() {
                       </TableCell>
                       <TableCell>
                         <span className="text-sm text-gray-600">
-                          {formatDate(agreement.created_date_time)}
+                          {formatDate(ag.created_date_time)}
                         </span>
                       </TableCell>
                       <TableCell>
                         <span className="text-sm text-gray-600">
-                          {formatDate(agreement.last_modified_date_time)}
+                          {formatDate(ag.last_modified_date_time)}
                         </span>
                       </TableCell>
                       <TableCell>
@@ -456,9 +530,7 @@ export function AgreementsList() {
 
             {(rawResponse?.cursor ?? rawResponse?.next_cursor) && !loading && (
               <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
-                <span className="text-xs text-gray-500">
-                  More results available — use cursor to paginate
-                </span>
+                <span className="text-xs text-gray-500">More results available</span>
                 <code className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-600 max-w-[300px] truncate">
                   {String(rawResponse?.cursor ?? rawResponse?.next_cursor)}
                 </code>
@@ -469,17 +541,63 @@ export function AgreementsList() {
 
         {!fetched && !loading && !error && (
           <div className="text-center py-20">
-            <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
-              <FileText className="w-8 h-8 text-gray-400" />
+            <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
+              <FileText className="w-7 h-7 text-gray-400" />
             </div>
-            <h3 className="text-base font-medium text-gray-700 mb-1">Ready to fetch agreements</h3>
-            <p className="text-sm text-gray-400">
-              Apply filters above and click <strong>Fetch Agreements</strong> to retrieve data from
+            <h3 className="text-sm font-medium text-gray-700 mb-1">Ready to fetch agreements</h3>
+            <p className="text-xs text-gray-400">
+              Apply filters above and click{" "}
+              <strong className="text-gray-600">Fetch Agreements</strong> to load data from
               the Docusign Navigator API.
             </p>
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+export function AgreementsList() {
+  const [auth, setAuth] = useState<AuthStatus | null>(null);
+  const [checking, setChecking] = useState(true);
+
+  const checkAuth = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/docusign/auth/status`);
+      const data = (await res.json()) as AuthStatus;
+      setAuth(data);
+    } catch {
+      setAuth({ authenticated: false, accountId: null });
+    } finally {
+      setChecking(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void checkAuth();
+  }, [checkAuth]);
+
+  if (checking) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <RefreshCw className="w-6 h-6 text-gray-400 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!auth?.authenticated) {
+    return (
+      <ConnectScreen
+        accountId={auth?.accountId ?? null}
+        onSuccess={() => void checkAuth()}
+      />
+    );
+  }
+
+  return (
+    <AgreementsView
+      auth={auth}
+      onLogout={() => setAuth({ authenticated: false, accountId: auth.accountId })}
+    />
   );
 }
