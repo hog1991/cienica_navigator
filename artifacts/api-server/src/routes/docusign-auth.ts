@@ -96,8 +96,23 @@ router.get("/docusign/auth/callback", async (req: Request, res: Response) => {
           name?: string;
           email?: string;
           sub?: string;
+          accounts?: Array<{
+            account_id?: string;
+            account_name?: string;
+            is_default?: boolean;
+          }>;
         };
-        userInfo = { name: u.name, email: u.email, sub: u.sub };
+        const configuredAccountId = process.env["DOCUSIGN_ACCOUNT_ID"];
+        const matchedAccount = u.accounts?.find(
+          (a) => a.account_id === configuredAccountId
+        ) ?? u.accounts?.find((a) => a.is_default) ?? u.accounts?.[0];
+        userInfo = {
+          name: u.name,
+          email: u.email,
+          sub: u.sub,
+          accountName: matchedAccount?.account_name,
+          accountId: matchedAccount?.account_id,
+        };
       }
     } catch {
     }
@@ -137,13 +152,14 @@ router.get("/docusign/auth/status", (_req: Request, res: Response) => {
   res.json({
     authenticated: true,
     accountId: accountId ? `...${accountId.slice(-6)}` : null,
+    accountName: token.userInfo?.accountName ?? null,
     user: token.userInfo ?? null,
     expiresAt: token.expiresAt,
   });
 });
 
 interface StoredToken {
-  userInfo?: { name?: string; email?: string; sub?: string };
+  userInfo?: { name?: string; email?: string; sub?: string; accountName?: string; accountId?: string };
 }
 
 function callbackPage(status: "success" | "error", userName: string | null, error: string | null): string {

@@ -34,6 +34,7 @@ router.get("/docusign/debug-info", (_req: Request, res: Response) => {
   res.json({
     account: {
       accountId: accountId ?? null,
+      accountName: token?.userInfo?.accountName ?? null,
       clientId: clientId ? `${clientId.slice(0, 8)}…` : null,
       user: token?.userInfo ?? null,
       tokenExpires: token ? new Date(token.expiresAt).toISOString() : null,

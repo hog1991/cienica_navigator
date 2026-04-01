@@ -5,6 +5,8 @@ export interface StoredToken {
     name?: string;
     email?: string;
     sub?: string;
+    accountName?: string;
+    accountId?: string;
   };
 }
 

@@ -151,14 +151,16 @@ function extractTotal(data: AgreementsResponse): number | null {
 interface AuthStatus {
   authenticated: boolean;
   accountId: string | null;
-  user?: { name?: string; email?: string } | null;
+  accountName?: string | null;
+  user?: { name?: string; email?: string; accountName?: string; accountId?: string } | null;
 }
 
 interface DebugInfo {
   account: {
     accountId: string | null;
+    accountName: string | null;
     clientId: string | null;
-    user: { name?: string; email?: string; sub?: string } | null;
+    user: { name?: string; email?: string; sub?: string; accountName?: string } | null;
     tokenExpires: string | null;
   };
   auth: { mode: string; authenticated: boolean };
@@ -329,6 +331,14 @@ function SettingsModal({
                 <div className="bg-gray-50 rounded-xl border border-gray-200 divide-y divide-gray-100">
                   {[
                     {
+                      label: "Account Name",
+                      value: debugInfo?.account.accountName
+                        ?? auth.accountName
+                        ?? auth.user?.accountName
+                        ?? "—",
+                      highlight: true,
+                    },
+                    {
                       label: "Account ID",
                       value: debugInfo?.account.accountId ?? auth.accountId ?? "—",
                       mono: true,
@@ -339,7 +349,7 @@ function SettingsModal({
                       mono: true,
                     },
                     {
-                      label: "User",
+                      label: "Signed In As",
                       value: debugInfo?.account.user?.name
                         ?? debugInfo?.account.user?.email
                         ?? auth.user?.name
@@ -356,11 +366,11 @@ function SettingsModal({
                         ? new Date(debugInfo.account.tokenExpires).toLocaleString()
                         : "—",
                     },
-                  ].map(({ label, value, mono }) => (
-                    <div key={label} className="flex items-center justify-between px-4 py-2.5">
-                      <span className="text-xs text-gray-500 w-44 shrink-0">{label}</span>
+                  ].map(({ label, value, mono, highlight }) => (
+                    <div key={label} className={`flex items-center justify-between px-4 py-2.5 ${highlight ? "bg-blue-50/60" : ""}`}>
+                      <span className={`text-xs w-44 shrink-0 ${highlight ? "text-blue-700 font-semibold" : "text-gray-500"}`}>{label}</span>
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <span className={`text-xs text-gray-900 truncate ${mono ? "font-mono" : "font-medium"}`}>
+                        <span className={`text-xs truncate ${highlight ? "text-blue-900 font-bold" : mono ? "font-mono text-gray-900" : "font-medium text-gray-900"}`}>
                           {value}
                         </span>
                         {value !== "—" && <CopyButton text={value} />}
