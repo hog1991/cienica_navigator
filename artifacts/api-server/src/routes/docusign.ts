@@ -15,6 +15,46 @@ router.get("/docusign/auth-status", (_req: Request, res: Response) => {
   });
 });
 
+router.get("/docusign/debug-info", (_req: Request, res: Response) => {
+  const token = getToken();
+  const accountId = process.env["DOCUSIGN_ACCOUNT_ID"];
+  const clientId = process.env["DOCUSIGN_CLIENT_ID"];
+  const hasDirectToken = !!process.env["DOCUSIGN_ACCESS_TOKEN"];
+  const hasJwtKey = !!process.env["DOCUSIGN_PRIVATE_KEY"];
+  const hasUserId = !!process.env["DOCUSIGN_USER_ID"];
+
+  const authMode = hasDirectToken
+    ? "direct_token"
+    : hasJwtKey && hasUserId
+      ? "jwt"
+      : token
+        ? "authorization_code"
+        : "unconfigured";
+
+  res.json({
+    account: {
+      accountId: accountId ?? null,
+      clientId: clientId ? `${clientId.slice(0, 8)}…` : null,
+      user: token?.userInfo ?? null,
+      tokenExpires: token ? new Date(token.expiresAt).toISOString() : null,
+    },
+    auth: {
+      mode: authMode,
+      authenticated: !!token,
+    },
+    scopes: ["adm_store_unified_repo_read"],
+    api: {
+      baseUrl: "https://api-d.docusign.com/v1",
+      environment: "sandbox (developer)",
+      agreementsEndpoint: accountId
+        ? `https://api-d.docusign.com/v1/accounts/${accountId}/agreements`
+        : "https://api-d.docusign.com/v1/accounts/{accountId}/agreements",
+      authEndpoint: "https://account-d.docusign.com/oauth/auth",
+      tokenEndpoint: "https://account-d.docusign.com/oauth/token",
+    },
+  });
+});
+
 router.get("/docusign/agreements", async (req: Request, res: Response) => {
   const accountId = process.env["DOCUSIGN_ACCOUNT_ID"];
 
