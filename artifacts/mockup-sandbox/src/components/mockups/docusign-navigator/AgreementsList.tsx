@@ -1072,6 +1072,26 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
   const hasAdvancedFilters = typeFilter !== "all" || reviewStatusFilter !== "all" || sortField !== "all"
     || effectiveDateFrom || effectiveDateTo || expirationDateFrom || expirationDateTo || customFilter || titleFilter || partyFilter;
 
+  const hasAnyFilter = !!search.trim() || statusFilter !== "all" || fetchAllPages || hasAdvancedFilters;
+
+  const resetAllFilters = () => {
+    setSearch("");
+    setStatusFilter("all");
+    setLimitFilter("25");
+    setFetchAllPages(false);
+    setTitleFilter("");
+    setPartyFilter("");
+    setTypeFilter("all");
+    setReviewStatusFilter("all");
+    setSortField("all");
+    setSortDirection("desc");
+    setEffectiveDateFrom("");
+    setEffectiveDateTo("");
+    setExpirationDateFrom("");
+    setExpirationDateTo("");
+    setCustomFilter("");
+  };
+
   const displayName = auth.user?.name ?? auth.user?.email ?? null;
 
   return (
@@ -1159,6 +1179,15 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
                 ? `Page ${fetchAllProgress.pages} · ${fetchAllProgress.count} loaded…`
                 : fetched ? "Refresh" : "Fetch Agreements"}
             </Button>
+            {hasAnyFilter && (
+              <button
+                onClick={resetAllFilters}
+                className="flex items-center gap-1.5 text-xs h-9 px-3 rounded-lg border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                title="Clear all filters">
+                <XCircle className="w-3.5 h-3.5" />
+                Clear filters
+              </button>
+            )}
             <button
               onClick={() => setShowAdvanced((v) => !v)}
               className={`flex items-center gap-1.5 text-xs h-9 px-3 rounded-lg border transition-colors ${showAdvanced || hasAdvancedFilters ? "border-blue-300 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-500 hover:text-gray-700"}`}>
@@ -1282,12 +1311,8 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
               )}
 
               <div className="flex justify-end">
-                <button onClick={() => {
-                  setTitleFilter(""); setPartyFilter(""); setTypeFilter("all"); setReviewStatusFilter("all");
-                  setSortField("all"); setEffectiveDateFrom(""); setEffectiveDateTo("");
-                  setExpirationDateFrom(""); setExpirationDateTo(""); setCustomFilter("");
-                }} className="text-xs text-red-500 hover:underline">
-                  Clear all server filters
+                <button onClick={resetAllFilters} className="text-xs text-red-500 hover:underline flex items-center gap-1">
+                  <XCircle className="w-3 h-3" /> Clear all filters
                 </button>
               </div>
             </div>
