@@ -97,20 +97,41 @@ interface Agreement {
   [key: string]: unknown;
 }
 
+interface ResponseMetadata {
+  ctoken?: string;
+  result_set_size?: number;
+  result_set_start_position?: number;
+  total_set_size?: number;
+  [key: string]: unknown;
+}
+
 interface AgreementsResponse {
   agreements?: Agreement[];
   data?: Agreement[];
   items?: Agreement[];
-  ctoken?: string;           // Navigator API continuation token
+  response_metadata?: ResponseMetadata;  // Navigator API wraps ctoken here
+  ctoken?: string;                        // top-level fallback
   response_ctoken?: string;
-  cursor?: string;           // legacy fallbacks
+  cursor?: string;
   next_cursor?: string;
   total?: number;
   [key: string]: unknown;
 }
 
 function extractCtoken(data: AgreementsResponse): string | null {
-  return data.ctoken ?? data.response_ctoken ?? data.cursor ?? data.next_cursor ?? null;
+  // Navigator API nests the continuation token inside response_metadata
+  return (
+    data.response_metadata?.ctoken ??
+    data.ctoken ??
+    data.response_ctoken ??
+    data.cursor ??
+    data.next_cursor ??
+    null
+  );
+}
+
+function extractTotal(data: AgreementsResponse): number | null {
+  return data.response_metadata?.total_set_size ?? data.total ?? null;
 }
 
 interface AuthStatus {
@@ -940,6 +961,7 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
   const [fetchAllProgress, setFetchAllProgress] = useState<{ pages: number; count: number } | null>(null);
   const [nextCtoken, setNextCtoken] = useState<string | null>(null);
   const [pageCount, setPageCount] = useState(0);
+  const [totalCount, setTotalCount] = useState<number | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fetched, setFetched] = useState(false);
@@ -1023,6 +1045,7 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
 
     setNextCtoken(null);
     setPageCount(0);
+    setTotalCount(null);
 
     const start = Date.now();
     try {
@@ -1036,6 +1059,7 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
         setRawResponse(json);
         setAgreements(extractAgreements(json));
         setNextCtoken(extractCtoken(json));
+        setTotalCount(extractTotal(json));
         setPageCount(1);
         setFetched(true);
       } else {
@@ -1103,6 +1127,7 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
       const newItems = extractAgreements(json);
       setAgreements((prev) => [...prev, ...newItems]);
       setNextCtoken(extractCtoken(json));
+      setTotalCount((prev) => extractTotal(json) ?? prev);
       setPageCount((p) => p + 1);
       setRawResponse(json);
     } catch (e) {
@@ -1135,6 +1160,7 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
     setCustomFilter("");
     setNextCtoken(null);
     setPageCount(0);
+    setTotalCount(null);
   };
 
   const displayName = auth.user?.name ?? auth.user?.email ?? null;
@@ -1473,7 +1499,11 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
                 <div className="flex items-center gap-3 text-xs text-gray-500">
                   <span>
                     Page{pageCount > 1 ? `s 1–${pageCount}` : ` ${pageCount}`} loaded
-                    {" · "}<span className="font-semibold text-gray-700">{agreements.length}</span> agreements
+                    {" · "}<span className="font-semibold text-gray-700">{agreements.length}</span>
+                    {totalCount != null && (
+                      <> of <span className="font-semibold text-gray-700">{totalCount}</span></>
+                    )}
+                    {" "}agreements
                   </span>
                   {nextCtoken && (
                     <span className="flex items-center gap-1 text-amber-600">
