@@ -98,10 +98,17 @@ interface Agreement {
 }
 
 interface ResponseMetadata {
+  page_limit?: number;
   ctoken?: string;
   result_set_size?: number;
-  result_set_start_position?: number;
   total_set_size?: number;
+  [key: string]: unknown;
+}
+
+interface ApiLinks {
+  next?: { href: string };
+  first?: { href: string };
+  self?: { href: string };
   [key: string]: unknown;
 }
 
@@ -109,8 +116,9 @@ interface AgreementsResponse {
   agreements?: Agreement[];
   data?: Agreement[];
   items?: Agreement[];
-  response_metadata?: ResponseMetadata;  // Navigator API wraps ctoken here
-  ctoken?: string;                        // top-level fallback
+  response_metadata?: ResponseMetadata;
+  _links?: ApiLinks;          // Navigator API: next page ctoken lives in _links.next.href
+  ctoken?: string;
   response_ctoken?: string;
   cursor?: string;
   next_cursor?: string;
@@ -119,7 +127,13 @@ interface AgreementsResponse {
 }
 
 function extractCtoken(data: AgreementsResponse): string | null {
-  // Navigator API nests the continuation token inside response_metadata
+  // Navigator API provides the ctoken inside _links.next.href as a query param
+  const nextHref = data._links?.next?.href;
+  if (nextHref) {
+    const match = nextHref.match(/[?&]ctoken=([^&]+)/);
+    if (match) return decodeURIComponent(match[1]);
+  }
+  // Fallbacks for other response shapes
   return (
     data.response_metadata?.ctoken ??
     data.ctoken ??
@@ -875,18 +889,19 @@ function AgreementRow({
 
 // ─── Stats bar ────────────────────────────────────────────────────────────────
 
-function StatsBar({ agreements }: { agreements: Agreement[] }) {
+function StatsBar({ agreements, totalCount }: { agreements: Agreement[]; totalCount: number | null }) {
   const counts = agreements.reduce<Record<string, number>>((acc, ag) => {
     const s = (ag.status ?? "unknown").toLowerCase();
     acc[s] = (acc[s] ?? 0) + 1;
     return acc;
   }, {});
   const totalValue = agreements.reduce((s, ag) => s + (ag.provisions?.total_agreement_value ?? 0), 0);
+  const displayTotal = totalCount ?? agreements.length;
 
   return (
     <div className="grid grid-cols-5 gap-3 mb-6">
       {[
-        { label: "Total", value: agreements.length, color: "text-gray-900" },
+        { label: totalCount != null ? "Total" : "Loaded", value: displayTotal, color: "text-gray-900" },
         { label: "Active", value: counts["active"] ?? 0, color: "text-green-700" },
         { label: "Pending", value: (counts["pending"] ?? 0) + (counts["in_progress"] ?? 0), color: "text-amber-700" },
         { label: "Expired", value: counts["expired"] ?? 0, color: "text-red-600" },
@@ -1199,7 +1214,7 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
           </div>
         </div>
 
-        {fetched && !loading && agreements.length > 0 && <StatsBar agreements={agreements} />}
+        {fetched && !loading && agreements.length > 0 && <StatsBar agreements={agreements} totalCount={totalCount} />}
 
         {/* Controls card */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-5 space-y-3">
