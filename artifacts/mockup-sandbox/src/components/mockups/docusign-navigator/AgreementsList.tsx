@@ -542,49 +542,126 @@ function SettingsModal({
 
 // ─── Row expand detail ────────────────────────────────────────────────────────
 
-function DetailRow({ agreement }: { agreement: Agreement }) {
-  const p = agreement.provisions ?? {};
+function DetailPanel({
+  agreement,
+  detail,
+  loading,
+  error,
+  showRaw,
+  onToggleRaw,
+}: {
+  agreement: Agreement;
+  detail: Agreement | null;
+  loading: boolean;
+  error: string | null;
+  showRaw: boolean;
+  onToggleRaw: () => void;
+}) {
+  const src = detail ?? agreement;
+  const p = src.provisions ?? {};
   const currency = formatCurrency(p.total_agreement_value, p.total_agreement_value_currency_code);
   const renewalLabel = p.renewal_type
     ? p.renewal_type.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
     : null;
 
-  const items = [
+  const provisions = [
     { icon: <CalendarDays className="w-3.5 h-3.5 text-blue-500" />, label: "Effective Date", value: formatDate(p.effective_date) },
     { icon: <CalendarDays className="w-3.5 h-3.5 text-orange-500" />, label: "Expiration Date", value: formatDate(p.expiration_date) },
     { icon: <DollarSign className="w-3.5 h-3.5 text-green-600" />, label: "Contract Value", value: currency ?? "—" },
     { icon: <Globe className="w-3.5 h-3.5 text-purple-500" />, label: "Jurisdiction", value: p.jurisdiction ?? "—" },
     { icon: <RotateCcw className="w-3.5 h-3.5 text-cyan-500" />, label: "Renewal Type", value: renewalLabel ?? "—" },
     { icon: <Bell className="w-3.5 h-3.5 text-amber-500" />, label: "Renewal Notice", value: formatDate(p.renewal_notice_date) },
-    { icon: <Link2 className="w-3.5 h-3.5 text-gray-500" />, label: "Source", value: agreement.source_name ?? "—" },
-    { icon: <Globe className="w-3.5 h-3.5 text-gray-400" />, label: "Language", value: agreement.languages?.join(", ").toUpperCase() ?? "—" },
+    { icon: <Link2 className="w-3.5 h-3.5 text-gray-500" />, label: "Source", value: src.source_name ?? "—" },
+    { icon: <Globe className="w-3.5 h-3.5 text-gray-400" />, label: "Language", value: src.languages?.join(", ").toUpperCase() ?? "—" },
   ];
+
+  const parties = (src.parties ?? []);
 
   return (
     <TableRow className="bg-blue-50/40 hover:bg-blue-50/40 border-b-0">
-      <TableCell colSpan={7} className="py-4 px-6">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {items.map(({ icon, label, value }) => (
-            <div key={label} className="flex items-start gap-2">
-              <div className="mt-0.5 shrink-0">{icon}</div>
-              <div>
-                <p className="text-xs text-gray-400 mb-0.5">{label}</p>
-                <p className="text-xs font-medium text-gray-800">{value}</p>
+      <TableCell colSpan={7} className="py-0 px-0">
+        <div className="border-l-2 border-blue-400 mx-4 my-3 rounded-lg bg-white shadow-sm overflow-hidden">
+          {/* Detail header */}
+          <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50/60">
+            <div className="flex items-center gap-2">
+              {loading && <RefreshCw className="w-3.5 h-3.5 text-blue-400 animate-spin" />}
+              {!loading && detail && (
+                <span className="flex items-center gap-1.5 text-xs text-green-600 font-medium">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Live from <code className="font-mono text-xs">GET /agreements/{src.id?.slice(0, 8)}…</code>
+                </span>
+              )}
+              {!loading && !detail && !error && (
+                <span className="text-xs text-gray-400 font-mono">GET /agreements/{src.id?.slice(0, 8)}…</span>
+              )}
+              {error && (
+                <span className="text-xs text-red-500 flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5" /> {error}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 bg-gray-100 rounded-md p-0.5">
+              <button onClick={onToggleRaw}
+                className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${!showRaw ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"}`}>
+                Provisions
+              </button>
+              <button onClick={onToggleRaw}
+                className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${showRaw ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"}`}>
+                Raw JSON
+              </button>
+            </div>
+          </div>
+
+          {showRaw ? (
+            <pre className="p-4 text-xs font-mono text-gray-700 overflow-auto max-h-64 bg-gray-50 leading-relaxed">
+              {JSON.stringify(detail ?? agreement, null, 2)}
+            </pre>
+          ) : (
+            <div className="p-4">
+              {/* Provisions grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                {provisions.map(({ icon, label, value }) => (
+                  <div key={label} className="flex items-start gap-2">
+                    <div className="mt-0.5 shrink-0">{icon}</div>
+                    <div>
+                      <p className="text-xs text-gray-400 mb-0.5">{label}</p>
+                      <p className="text-xs font-medium text-gray-800">{loading && !detail ? "…" : value}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Parties */}
+              {parties.length > 0 && (
+                <div className="mb-3 pt-3 border-t border-gray-100">
+                  <p className="text-xs text-gray-400 mb-2">Parties</p>
+                  <div className="flex flex-wrap gap-2">
+                    {parties.map((party, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 border border-blue-100 rounded-full text-xs text-blue-700">
+                        <User className="w-3 h-3" />
+                        {partyName(party)}
+                        {party.role && <span className="text-blue-400 text-[10px]">· {party.role}</span>}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Footer row */}
+              <div className="flex items-center gap-4 pt-3 border-t border-gray-100">
+                {src._links?.document?.href && (
+                  <a href={src._links.document.href} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:underline">
+                    <ExternalLink className="w-3 h-3" /> View document
+                  </a>
+                )}
+                {src.id && (
+                  <span className="text-xs text-gray-300 font-mono ml-auto">ID: {src.id}</span>
+                )}
               </div>
             </div>
-          ))}
+          )}
         </div>
-        {agreement._links?.document?.href && (
-          <div className="mt-3 pt-3 border-t border-blue-100">
-            <a href={agreement._links.document.href} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:underline">
-              <ExternalLink className="w-3 h-3" /> View document
-            </a>
-          </div>
-        )}
-        {agreement.id && (
-          <p className="mt-1 text-xs text-gray-400 font-mono">ID: {agreement.id}</p>
-        )}
       </TableCell>
     </TableRow>
   );
@@ -592,8 +669,55 @@ function DetailRow({ agreement }: { agreement: Agreement }) {
 
 // ─── Agreement row ────────────────────────────────────────────────────────────
 
-function AgreementRow({ agreement }: { agreement: Agreement }) {
+function AgreementRow({
+  agreement,
+  onDetailFetch,
+}: {
+  agreement: Agreement;
+  onDetailFetch: (call: LastCall) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const [detail, setDetail] = useState<Agreement | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [showRaw, setShowRaw] = useState(false);
+  const fetchedRef = useRef(false);
+
+  const handleExpand = async () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (next && !fetchedRef.current && agreement.id) {
+      fetchedRef.current = true;
+      setDetailLoading(true);
+      setDetailError(null);
+      const url = `${API_BASE}/docusign/agreements/${encodeURIComponent(agreement.id)}`;
+      const start = Date.now();
+      try {
+        const res = await fetch(url);
+        const durationMs = Date.now() - start;
+        const json = (await res.json()) as Agreement;
+        onDetailFetch({
+          method: "GET",
+          url,
+          params: {},
+          status: res.status,
+          responseBody: json,
+          timestamp: new Date().toISOString(),
+          durationMs,
+        });
+        if (!res.ok) {
+          setDetailError((json as { error?: string }).error ?? `Status ${res.status}`);
+        } else {
+          setDetail(json);
+        }
+      } catch (e) {
+        setDetailError(e instanceof Error ? e.message : "Network error");
+      } finally {
+        setDetailLoading(false);
+      }
+    }
+  };
+
   const p = agreement.provisions ?? {};
   const currency = formatCurrency(p.total_agreement_value, p.total_agreement_value_currency_code);
   const soon = isEffectiveSoon(p.effective_date);
@@ -602,7 +726,7 @@ function AgreementRow({ agreement }: { agreement: Agreement }) {
   return (
     <>
       <TableRow className="group cursor-pointer hover:bg-gray-50/80 transition-colors"
-        onClick={() => setExpanded((e) => !e)}>
+        onClick={() => void handleExpand()}>
         <TableCell className="py-3 pr-3">
           <div className="flex items-start gap-2.5">
             <FileText className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
@@ -672,7 +796,16 @@ function AgreementRow({ agreement }: { agreement: Agreement }) {
             : <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-gray-500 transition-colors inline" />}
         </TableCell>
       </TableRow>
-      {expanded && <DetailRow agreement={agreement} />}
+      {expanded && (
+        <DetailPanel
+          agreement={agreement}
+          detail={detail}
+          loading={detailLoading}
+          error={detailError}
+          showRaw={showRaw}
+          onToggleRaw={() => setShowRaw((r) => !r)}
+        />
+      )}
     </>
   );
 }
@@ -1023,7 +1156,13 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {displayedAgreements.map((ag, idx) => <AgreementRow key={ag.id ?? idx} agreement={ag} />)}
+                  {displayedAgreements.map((ag, idx) => (
+                    <AgreementRow
+                      key={ag.id ?? idx}
+                      agreement={ag}
+                      onDetailFetch={(call) => setLastCall(call)}
+                    />
+                  ))}
                 </TableBody>
               </Table>
             )}

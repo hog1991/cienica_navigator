@@ -55,6 +55,47 @@ router.get("/docusign/debug-info", (_req: Request, res: Response) => {
   });
 });
 
+router.get("/docusign/agreements/:agreementId", async (req: Request, res: Response) => {
+  const accountId = process.env["DOCUSIGN_ACCOUNT_ID"];
+  const { agreementId } = req.params;
+
+  if (!accountId) {
+    res.status(500).json({ error: "DOCUSIGN_ACCOUNT_ID is not configured" });
+    return;
+  }
+
+  const tokenRecord = getToken();
+  if (!tokenRecord) {
+    res.status(401).json({ error: "Not authenticated", code: "unauthenticated" });
+    return;
+  }
+
+  try {
+    const url = `${DOCUSIGN_BASE_URL}/accounts/${accountId}/agreements/${encodeURIComponent(agreementId)}`;
+
+    const apiRes = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${tokenRecord.accessToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    const data = (await apiRes.json()) as unknown;
+
+    if (!apiRes.ok) {
+      req.log.warn({ status: apiRes.status, data }, "Docusign getAgreement error");
+      res.status(apiRes.status).json({ error: "Docusign API error", details: data });
+      return;
+    }
+
+    res.json(data);
+  } catch (err) {
+    req.log.error({ err }, "Failed to fetch Docusign agreement");
+    const message = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: message });
+  }
+});
+
 router.get("/docusign/agreements", async (req: Request, res: Response) => {
   const accountId = process.env["DOCUSIGN_ACCOUNT_ID"];
 
