@@ -115,16 +115,20 @@ router.get("/docusign/agreements", async (req: Request, res: Response) => {
 
   try {
     const params = new URLSearchParams();
-    if (req.query["cursor"]) params.set("cursor", String(req.query["cursor"]));
+    // Pagination — Navigator API uses 'ctoken' for continuation, not 'cursor'
+    if (req.query["ctoken"]) params.set("ctoken", String(req.query["ctoken"]));
     if (req.query["limit"]) params.set("limit", String(req.query["limit"]));
-    if (req.query["from_date"]) params.set("from_date", String(req.query["from_date"]));
-    if (req.query["to_date"]) params.set("to_date", String(req.query["to_date"]));
+    // Direct filter params
     if (req.query["status"]) params.set("status", String(req.query["status"]));
-    if (req.query["type"]) params.set("type", String(req.query["type"]));
-    // search_text is not a valid Navigator API parameter — filtering is done client-side
-    if (req.query["order_by"]) params.set("order_by", String(req.query["order_by"]));
-    if (req.query["order_direction"])
-      params.set("order_direction", String(req.query["order_direction"]));
+    if (req.query["review_status"]) params.set("review_status", String(req.query["review_status"]));
+    if (req.query["title"]) params.set("title", String(req.query["title"]));
+    if (req.query["parties.name_in_agreement"])
+      params.set("parties.name_in_agreement", String(req.query["parties.name_in_agreement"]));
+    // OData $filter string (built by the client)
+    if (req.query["$filter"]) params.set("$filter", String(req.query["$filter"]));
+    // Sort
+    if (req.query["sort"]) params.set("sort", String(req.query["sort"]));
+    if (req.query["direction"]) params.set("direction", String(req.query["direction"]));
 
     const url = `${DOCUSIGN_BASE_URL}/accounts/${accountId}/agreements${params.toString() ? `?${params}` : ""}`;
 

@@ -101,10 +101,16 @@ interface AgreementsResponse {
   agreements?: Agreement[];
   data?: Agreement[];
   items?: Agreement[];
-  cursor?: string;
+  ctoken?: string;           // Navigator API continuation token
+  response_ctoken?: string;
+  cursor?: string;           // legacy fallbacks
   next_cursor?: string;
   total?: number;
   [key: string]: unknown;
+}
+
+function extractCtoken(data: AgreementsResponse): string | null {
+  return data.ctoken ?? data.response_ctoken ?? data.cursor ?? data.next_cursor ?? null;
 }
 
 interface AuthStatus {
@@ -931,27 +937,59 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
   const [agreements, setAgreements] = useState<Agreement[]>([]);
   const [rawResponse, setRawResponse] = useState<AgreementsResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [fetchAllProgress, setFetchAllProgress] = useState<{ pages: number; count: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fetched, setFetched] = useState(false);
   const [lastCall, setLastCall] = useState<LastCall | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  // Basic controls
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [limitFilter, setLimitFilter] = useState("25");
+  const [fetchAllPages, setFetchAllPages] = useState(false);
   const [viewMode, setViewMode] = useState<"table" | "raw">("table");
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // Client-side filtered view (search_text is not a valid Navigator API param)
+  // Advanced / server-side filters
+  const [titleFilter, setTitleFilter] = useState("");
+  const [partyFilter, setPartyFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [reviewStatusFilter, setReviewStatusFilter] = useState("all");
+  const [sortField, setSortField] = useState("all");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+  const [effectiveDateFrom, setEffectiveDateFrom] = useState("");
+  const [effectiveDateTo, setEffectiveDateTo] = useState("");
+  const [expirationDateFrom, setExpirationDateFrom] = useState("");
+  const [expirationDateTo, setExpirationDateTo] = useState("");
+  const [customFilter, setCustomFilter] = useState("");
+
+  // Build OData $filter string from individual fields
+  const buildODataFilter = useCallback((): string => {
+    if (customFilter.trim()) return customFilter.trim();
+    const parts: string[] = [];
+    if (typeFilter !== "all") parts.push(`type eq '${typeFilter}'`);
+    if (effectiveDateFrom) parts.push(`provisions/effective_date ge ${effectiveDateFrom}`);
+    if (effectiveDateTo) parts.push(`provisions/effective_date le ${effectiveDateTo}`);
+    if (expirationDateFrom) parts.push(`provisions/expiration_date ge ${expirationDateFrom}`);
+    if (expirationDateTo) parts.push(`provisions/expiration_date le ${expirationDateTo}`);
+    return parts.join(" and ");
+  }, [customFilter, typeFilter, effectiveDateFrom, effectiveDateTo, expirationDateFrom, expirationDateTo]);
+
+  const builtFilter = buildODataFilter();
+
+  // Client-side search applied on top of server results
   const displayedAgreements = search.trim()
     ? agreements.filter((ag) => {
         const q = search.toLowerCase();
-        const inName = (ag.name ?? "").toLowerCase().includes(q);
-        const inType = (ag.type ?? "").toLowerCase().includes(q);
-        const inSource = (ag.source_name ?? "").toLowerCase().includes(q);
-        const inParties = (ag.parties ?? []).some((p) =>
-          (p.name_in_agreement ?? p.name ?? "").toLowerCase().includes(q)
+        return (
+          (ag.title ?? ag.name ?? "").toLowerCase().includes(q) ||
+          (ag.type ?? "").toLowerCase().includes(q) ||
+          (ag.category ?? "").toLowerCase().includes(q) ||
+          (ag.source_name ?? "").toLowerCase().includes(q) ||
+          (ag.file_name ?? "").toLowerCase().includes(q) ||
+          (ag.parties ?? []).some((p) => (p.name_in_agreement ?? p.name ?? "").toLowerCase().includes(q))
         );
-        return inName || inType || inSource || inParties;
       })
     : agreements;
 
@@ -963,45 +1001,76 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
   const fetchAgreements = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setFetchAllProgress(null);
 
-    // search is applied client-side; only send valid Navigator API params
     const params: Record<string, string> = {};
     if (statusFilter !== "all") params["status"] = statusFilter;
-    params["limit"] = limitFilter;
+    if (titleFilter.trim()) params["title"] = titleFilter.trim();
+    if (partyFilter.trim()) params["parties.name_in_agreement"] = partyFilter.trim();
+    if (reviewStatusFilter !== "all") params["review_status"] = reviewStatusFilter;
+    if (sortField !== "all") { params["sort"] = sortField; params["direction"] = sortDirection; }
+    const odata = buildODataFilter();
+    if (odata) params["$filter"] = odata;
+    params["limit"] = fetchAllPages ? "100" : limitFilter;
 
-    const qs = new URLSearchParams(params);
-    const url = `${API_BASE}/docusign/agreements${qs.toString() ? `?${qs}` : ""}`;
+    const buildUrl = (extra: Record<string, string> = {}) => {
+      const qs = new URLSearchParams({ ...params, ...extra });
+      return `${API_BASE}/docusign/agreements?${qs}`;
+    };
 
     const start = Date.now();
     try {
-      const res = await fetch(url);
-      const durationMs = Date.now() - start;
-      const json = (await res.json()) as AgreementsResponse;
+      if (!fetchAllPages) {
+        const url = buildUrl();
+        const res = await fetch(url);
+        const durationMs = Date.now() - start;
+        const json = (await res.json()) as AgreementsResponse;
+        setLastCall({ method: "GET", url, params, status: res.status, responseBody: json, timestamp: new Date().toISOString(), durationMs });
+        if (!res.ok) { setError((json as { error?: string }).error ?? `Status ${res.status}`); return; }
+        setRawResponse(json);
+        setAgreements(extractAgreements(json));
+        setFetched(true);
+      } else {
+        // Fetch all pages using ctoken
+        let allAgreements: Agreement[] = [];
+        let pageCount = 0;
+        let ctoken: string | null = null;
+        let lastJson: AgreementsResponse = {};
+        let lastRes: Response | null = null;
 
-      setLastCall({
-        method: "GET",
-        url,
-        params,
-        status: res.status,
-        responseBody: json,
-        timestamp: new Date().toISOString(),
-        durationMs,
-      });
+        do {
+          const url = buildUrl(ctoken ? { ctoken } : {});
+          const res = await fetch(url);
+          lastRes = res;
+          const json = (await res.json()) as AgreementsResponse;
+          if (!res.ok) {
+            setError((json as { error?: string }).error ?? `Status ${res.status}`);
+            return;
+          }
+          const page = extractAgreements(json);
+          allAgreements = [...allAgreements, ...page];
+          pageCount++;
+          ctoken = extractCtoken(json);
+          lastJson = json;
+          setFetchAllProgress({ pages: pageCount, count: allAgreements.length });
+        } while (ctoken);
 
-      if (!res.ok) {
-        setError((json as { error?: string }).error ?? `Status ${res.status}`);
-        return;
+        const durationMs = Date.now() - start;
+        setLastCall({ method: "GET", url: buildUrl(), params: { ...params, ctoken: "(all pages)" }, status: lastRes!.status, responseBody: { total_fetched: allAgreements.length, pages: pageCount, last_page_response: lastJson }, timestamp: new Date().toISOString(), durationMs });
+        setRawResponse({ ...lastJson, data: allAgreements, total: allAgreements.length });
+        setAgreements(allAgreements);
+        setFetched(true);
       }
-
-      setRawResponse(json);
-      setAgreements(extractAgreements(json));
-      setFetched(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Network error");
     } finally {
       setLoading(false);
+      setFetchAllProgress(null);
     }
-  }, [statusFilter, limitFilter]);
+  }, [statusFilter, limitFilter, fetchAllPages, titleFilter, partyFilter, reviewStatusFilter, sortField, sortDirection, buildODataFilter]);
+
+  const hasAdvancedFilters = typeFilter !== "all" || reviewStatusFilter !== "all" || sortField !== "all"
+    || effectiveDateFrom || effectiveDateTo || expirationDateFrom || expirationDateTo || customFilter || titleFilter || partyFilter;
 
   const displayName = auth.user?.name ?? auth.user?.email ?? null;
 
@@ -1015,15 +1084,10 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
               <div className="w-9 h-9 rounded-lg bg-[#1B1E2E] flex items-center justify-center">
                 <FileText className="w-5 h-5 text-white" />
               </div>
-              <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">
-                Navigator Agreements
-              </h1>
+              <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Navigator Agreements</h1>
             </div>
-            <p className="text-sm text-gray-500 ml-12">
-              AI-extracted agreement metadata from Docusign Navigator
-            </p>
+            <p className="text-sm text-gray-500 ml-12">AI-extracted agreement metadata from Docusign Navigator</p>
           </div>
-
           <div className="flex items-center gap-2">
             {displayName && (
               <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -1033,21 +1097,12 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
                 <span className="hidden sm:block text-sm">{displayName}</span>
               </div>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 w-8 p-0 text-gray-600"
-              onClick={() => setSettingsOpen(true)}
-              title="Settings & Debug"
-            >
+            <Button variant="outline" size="sm" className="h-8 w-8 p-0 text-gray-600"
+              onClick={() => setSettingsOpen(true)} title="Settings & Debug">
               <Settings className="w-4 h-4" />
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5 text-gray-600 h-8"
-              onClick={() => void handleLogout()}
-            >
+            <Button variant="outline" size="sm" className="gap-1.5 text-gray-600 h-8"
+              onClick={() => void handleLogout()}>
               <LogOut className="w-3.5 h-3.5" /> Disconnect
             </Button>
           </div>
@@ -1055,14 +1110,15 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
 
         {fetched && !loading && agreements.length > 0 && <StatsBar agreements={agreements} />}
 
-        {/* Controls */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-5">
+        {/* Controls card */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-5 space-y-3">
+          {/* Row 1: quick filters */}
           <div className="flex items-end gap-3 flex-wrap">
             <div className="flex-1 min-w-[180px]">
-              <label className="block text-xs font-medium text-gray-600 mb-1.5">Search</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1.5">Quick filter (client-side)</label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <Input className="pl-9 h-9 text-sm" placeholder="Filter by name, party, type…"
+                <Input className="pl-9 h-9 text-sm" placeholder="Filter by title, party, type, file…"
                   value={search} onChange={(e) => setSearch(e.target.value)} />
               </div>
             </div>
@@ -1074,46 +1130,177 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
                 <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="Active">Active</SelectItem>
-                  <SelectItem value="Draft">Draft</SelectItem>
-                  <SelectItem value="Pending">Pending</SelectItem>
-                  <SelectItem value="Completed">Completed</SelectItem>
-                  <SelectItem value="Voided">Voided</SelectItem>
-                  <SelectItem value="Declined">Declined</SelectItem>
-                  <SelectItem value="Expired">Expired</SelectItem>
+                  <SelectItem value="COMPLETE">Complete</SelectItem>
+                  <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                  <SelectItem value="EXPIRED">Expired</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div className="w-24">
+            <div className="w-28">
               <label className="block text-xs font-medium text-gray-600 mb-1.5">Per page</label>
-              <Select value={limitFilter} onValueChange={setLimitFilter}>
+              <Select value={fetchAllPages ? "all" : limitFilter}
+                onValueChange={(v) => { if (v === "all") { setFetchAllPages(true); } else { setFetchAllPages(false); setLimitFilter(v); } }}>
                 <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="10">10</SelectItem>
                   <SelectItem value="25">25</SelectItem>
                   <SelectItem value="50">50</SelectItem>
                   <SelectItem value="100">100</SelectItem>
+                  <SelectItem value="200">200</SelectItem>
+                  <SelectItem value="500">500</SelectItem>
+                  <SelectItem value="all">All pages ∞</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <Button className="h-9 gap-2 bg-[#1B1E2E] hover:bg-[#2b3050] text-white"
               onClick={() => void fetchAgreements()} disabled={loading}>
-              {loading
-                ? <RefreshCw className="w-4 h-4 animate-spin" />
-                : <RefreshCw className="w-4 h-4" />}
-              {fetched ? "Refresh" : "Fetch Agreements"}
+              {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              {loading && fetchAllProgress
+                ? `Page ${fetchAllProgress.pages} · ${fetchAllProgress.count} loaded…`
+                : fetched ? "Refresh" : "Fetch Agreements"}
             </Button>
+            <button
+              onClick={() => setShowAdvanced((v) => !v)}
+              className={`flex items-center gap-1.5 text-xs h-9 px-3 rounded-lg border transition-colors ${showAdvanced || hasAdvancedFilters ? "border-blue-300 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-500 hover:text-gray-700"}`}>
+              <Filter className="w-3.5 h-3.5" />
+              Server filters
+              {hasAdvancedFilters && <span className="w-4 h-4 rounded-full bg-blue-500 text-white text-[10px] flex items-center justify-center font-bold">!</span>}
+              {showAdvanced ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+            </button>
           </div>
 
+          {/* Row 2: advanced server-side filters (collapsible) */}
+          {showAdvanced && (
+            <div className="pt-3 border-t border-gray-100 space-y-3">
+              <div className="flex flex-wrap gap-3">
+                {/* Title */}
+                <div className="flex-1 min-w-[160px]">
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Title contains</label>
+                  <Input className="h-8 text-xs" placeholder="e.g. Master Services"
+                    value={titleFilter} onChange={(e) => setTitleFilter(e.target.value)} />
+                </div>
+                {/* Party name */}
+                <div className="flex-1 min-w-[160px]">
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Party name</label>
+                  <Input className="h-8 text-xs" placeholder="e.g. Acme Corp"
+                    value={partyFilter} onChange={(e) => setPartyFilter(e.target.value)} />
+                </div>
+                {/* Type ($filter) */}
+                <div className="w-36">
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Agreement type</label>
+                  <Select value={typeFilter} onValueChange={setTypeFilter}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Any type</SelectItem>
+                      <SelectItem value="Msa">MSA</SelectItem>
+                      <SelectItem value="Nda">NDA</SelectItem>
+                      <SelectItem value="Sow">SOW</SelectItem>
+                      <SelectItem value="Amendment">Amendment</SelectItem>
+                      <SelectItem value="Order">Order</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* Review status */}
+                <div className="w-36">
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Review status</label>
+                  <Select value={reviewStatusFilter} onValueChange={setReviewStatusFilter}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Any</SelectItem>
+                      <SelectItem value="COMPLETE">Complete</SelectItem>
+                      <SelectItem value="PENDING">Pending</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Date filters */}
+              <div className="flex flex-wrap gap-3">
+                <div className="flex-1 min-w-[130px]">
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Effective from</label>
+                  <Input type="date" className="h-8 text-xs" value={effectiveDateFrom}
+                    onChange={(e) => setEffectiveDateFrom(e.target.value)} />
+                </div>
+                <div className="flex-1 min-w-[130px]">
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Effective to</label>
+                  <Input type="date" className="h-8 text-xs" value={effectiveDateTo}
+                    onChange={(e) => setEffectiveDateTo(e.target.value)} />
+                </div>
+                <div className="flex-1 min-w-[130px]">
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Expires from</label>
+                  <Input type="date" className="h-8 text-xs" value={expirationDateFrom}
+                    onChange={(e) => setExpirationDateFrom(e.target.value)} />
+                </div>
+                <div className="flex-1 min-w-[130px]">
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Expires to</label>
+                  <Input type="date" className="h-8 text-xs" value={expirationDateTo}
+                    onChange={(e) => setExpirationDateTo(e.target.value)} />
+                </div>
+                {/* Sort */}
+                <div className="w-40">
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Sort by</label>
+                  <Select value={sortField} onValueChange={setSortField}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Default</SelectItem>
+                      <SelectItem value="created_at">Created</SelectItem>
+                      <SelectItem value="title">Title</SelectItem>
+                      <SelectItem value="provisions/effective_date">Effective date</SelectItem>
+                      <SelectItem value="provisions/expiration_date">Expiration date</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="w-28">
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Direction</label>
+                  <Select value={sortDirection} onValueChange={(v) => setSortDirection(v as "asc" | "desc")}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="desc">Descending</SelectItem>
+                      <SelectItem value="asc">Ascending</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Custom $filter */}
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">
+                  Custom <code className="font-mono">$filter</code> expression
+                  <span className="ml-2 text-gray-400 font-normal">(overrides type / date filters above)</span>
+                </label>
+                <Input className="h-8 text-xs font-mono" placeholder="e.g. type in ('Msa','Nda') and provisions/effective_date ge 2024-01-01"
+                  value={customFilter} onChange={(e) => setCustomFilter(e.target.value)} />
+              </div>
+
+              {/* Built filter preview */}
+              {builtFilter && (
+                <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                  <code className="text-xs font-mono text-blue-700 flex-1 break-all">$filter={builtFilter}</code>
+                  <CopyButton text={builtFilter} />
+                </div>
+              )}
+
+              <div className="flex justify-end">
+                <button onClick={() => {
+                  setTitleFilter(""); setPartyFilter(""); setTypeFilter("all"); setReviewStatusFilter("all");
+                  setSortField("all"); setEffectiveDateFrom(""); setEffectiveDateTo("");
+                  setExpirationDateFrom(""); setExpirationDateTo(""); setCustomFilter("");
+                }} className="text-xs text-red-500 hover:underline">
+                  Clear all server filters
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Last call hint */}
           {lastCall && !loading && (
-            <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
-              <code className="text-xs text-gray-400 font-mono">
+            <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
+              <code className="text-xs text-gray-400 font-mono truncate max-w-[500px]">
                 GET {lastCall.url.replace(API_BASE, "")}
               </code>
-              <button
-                onClick={() => { setSettingsOpen(true); }}
-                className="text-xs text-blue-500 hover:underline flex items-center gap-1"
-              >
+              <button onClick={() => setSettingsOpen(true)}
+                className="text-xs text-blue-500 hover:underline flex items-center gap-1 shrink-0 ml-2">
                 <Key className="w-3 h-3" /> View full request
               </button>
             </div>
@@ -1132,7 +1319,14 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
               <span className="text-sm text-gray-500">
-                {loading ? "Loading..." : (
+                {loading ? (
+                  <span className="flex items-center gap-2">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" />
+                    {fetchAllProgress
+                      ? `Fetching all pages — page ${fetchAllProgress.pages}, ${fetchAllProgress.count} agreements loaded…`
+                      : "Loading…"}
+                  </span>
+                ) : (
                   <>
                     <span className="font-semibold text-gray-900">{displayedAgreements.length}</span>
                     {search.trim() && displayedAgreements.length !== agreements.length && (
@@ -1144,6 +1338,9 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
                     )}
                     {search.trim() && (
                       <span className="text-gray-400 ml-1">matching "{search}"</span>
+                    )}
+                    {fetchAllPages && !search.trim() && (
+                      <span className="ml-2 text-xs text-green-600">· all pages fetched</span>
                     )}
                   </>
                 )}
@@ -1193,22 +1390,21 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
                 </TableHeader>
                 <TableBody>
                   {displayedAgreements.map((ag, idx) => (
-                    <AgreementRow
-                      key={ag.id ?? idx}
-                      agreement={ag}
-                      onDetailFetch={(call) => setLastCall(call)}
-                    />
+                    <AgreementRow key={ag.id ?? idx} agreement={ag}
+                      onDetailFetch={(call) => setLastCall(call)} />
                   ))}
                 </TableBody>
               </Table>
             )}
 
-            {(rawResponse?.cursor ?? rawResponse?.next_cursor) && !loading && (
+            {!fetchAllPages && extractCtoken(rawResponse ?? {}) && !loading && (
               <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
-                <span className="text-xs text-gray-500">More results available</span>
-                <code className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-600 max-w-[300px] truncate">
-                  {String(rawResponse?.cursor ?? rawResponse?.next_cursor)}
-                </code>
+                <span className="text-xs text-gray-500">More pages available</span>
+                <button
+                  onClick={() => setFetchAllPages(true)}
+                  className="text-xs text-blue-500 hover:underline flex items-center gap-1">
+                  <RefreshCw className="w-3 h-3" /> Fetch all pages
+                </button>
               </div>
             )}
           </div>
@@ -1227,12 +1423,7 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
         )}
       </div>
 
-      <SettingsModal
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        auth={auth}
-        lastCall={lastCall}
-      />
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} auth={auth} lastCall={lastCall} />
     </div>
   );
 }
