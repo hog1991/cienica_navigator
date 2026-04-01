@@ -938,6 +938,9 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
   const [rawResponse, setRawResponse] = useState<AgreementsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [fetchAllProgress, setFetchAllProgress] = useState<{ pages: number; count: number } | null>(null);
+  const [nextCtoken, setNextCtoken] = useState<string | null>(null);
+  const [pageCount, setPageCount] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fetched, setFetched] = useState(false);
   const [lastCall, setLastCall] = useState<LastCall | null>(null);
@@ -1018,6 +1021,9 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
       return `${API_BASE}/docusign/agreements?${qs}`;
     };
 
+    setNextCtoken(null);
+    setPageCount(0);
+
     const start = Date.now();
     try {
       if (!fetchAllPages) {
@@ -1029,6 +1035,8 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
         if (!res.ok) { setError((json as { error?: string }).error ?? `Status ${res.status}`); return; }
         setRawResponse(json);
         setAgreements(extractAgreements(json));
+        setNextCtoken(extractCtoken(json));
+        setPageCount(1);
         setFetched(true);
       } else {
         // Fetch all pages using ctoken
@@ -1069,6 +1077,41 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
     }
   }, [statusFilter, limitFilter, fetchAllPages, titleFilter, partyFilter, reviewStatusFilter, sortField, sortDirection, buildODataFilter]);
 
+  const loadNextPage = useCallback(async () => {
+    if (!nextCtoken) return;
+    setLoadingMore(true);
+    setError(null);
+    const params: Record<string, string> = {};
+    if (statusFilter !== "all") params["status"] = statusFilter;
+    if (titleFilter.trim()) params["title"] = titleFilter.trim();
+    if (partyFilter.trim()) params["parties.name_in_agreement"] = partyFilter.trim();
+    if (reviewStatusFilter !== "all") params["review_status"] = reviewStatusFilter;
+    if (sortField !== "all") { params["sort"] = sortField; params["direction"] = sortDirection; }
+    const odata = buildODataFilter();
+    if (odata) params["$filter"] = odata;
+    params["limit"] = limitFilter;
+    params["ctoken"] = nextCtoken;
+    const qs = new URLSearchParams(params);
+    const url = `${API_BASE}/docusign/agreements?${qs}`;
+    const start = Date.now();
+    try {
+      const res = await fetch(url);
+      const durationMs = Date.now() - start;
+      const json = (await res.json()) as AgreementsResponse;
+      setLastCall({ method: "GET", url, params, status: res.status, responseBody: json, timestamp: new Date().toISOString(), durationMs });
+      if (!res.ok) { setError((json as { error?: string }).error ?? `Status ${res.status}`); return; }
+      const newItems = extractAgreements(json);
+      setAgreements((prev) => [...prev, ...newItems]);
+      setNextCtoken(extractCtoken(json));
+      setPageCount((p) => p + 1);
+      setRawResponse(json);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Network error");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [nextCtoken, statusFilter, limitFilter, titleFilter, partyFilter, reviewStatusFilter, sortField, sortDirection, buildODataFilter]);
+
   const hasAdvancedFilters = typeFilter !== "all" || reviewStatusFilter !== "all" || sortField !== "all"
     || effectiveDateFrom || effectiveDateTo || expirationDateFrom || expirationDateTo || customFilter || titleFilter || partyFilter;
 
@@ -1090,6 +1133,8 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
     setExpirationDateFrom("");
     setExpirationDateTo("");
     setCustomFilter("");
+    setNextCtoken(null);
+    setPageCount(0);
   };
 
   const displayName = auth.user?.name ?? auth.user?.email ?? null;
@@ -1422,14 +1467,43 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
               </Table>
             )}
 
-            {!fetchAllPages && extractCtoken(rawResponse ?? {}) && !loading && (
-              <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
-                <span className="text-xs text-gray-500">More pages available</span>
-                <button
-                  onClick={() => setFetchAllPages(true)}
-                  className="text-xs text-blue-500 hover:underline flex items-center gap-1">
-                  <RefreshCw className="w-3 h-3" /> Fetch all pages
-                </button>
+            {/* Pagination footer */}
+            {!loading && fetched && (
+              <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3 text-xs text-gray-500">
+                  <span>
+                    Page{pageCount > 1 ? `s 1–${pageCount}` : ` ${pageCount}`} loaded
+                    {" · "}<span className="font-semibold text-gray-700">{agreements.length}</span> agreements
+                  </span>
+                  {nextCtoken && (
+                    <span className="flex items-center gap-1 text-amber-600">
+                      <ChevronRight className="w-3 h-3" /> more pages available
+                    </span>
+                  )}
+                  {!nextCtoken && fetched && (
+                    <span className="flex items-center gap-1 text-green-600">
+                      <CheckCircle2 className="w-3 h-3" /> all results loaded
+                    </span>
+                  )}
+                </div>
+                {nextCtoken && (
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm"
+                      className="h-7 gap-1.5 text-xs text-gray-700"
+                      onClick={() => void loadNextPage()}
+                      disabled={loadingMore}>
+                      {loadingMore
+                        ? <><RefreshCw className="w-3 h-3 animate-spin" /> Loading…</>
+                        : <><ChevronRight className="w-3 h-3" /> Load next {limitFilter}</>}
+                    </Button>
+                    <Button variant="outline" size="sm"
+                      className="h-7 gap-1.5 text-xs text-blue-600 border-blue-200 hover:bg-blue-50"
+                      onClick={() => { setFetchAllPages(true); void fetchAgreements(); }}
+                      disabled={loading || loadingMore}>
+                      <RefreshCw className="w-3 h-3" /> Fetch all remaining
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>
