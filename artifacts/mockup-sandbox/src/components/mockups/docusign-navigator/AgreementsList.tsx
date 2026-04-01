@@ -772,6 +772,20 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
   const [limitFilter, setLimitFilter] = useState("25");
   const [viewMode, setViewMode] = useState<"table" | "raw">("table");
 
+  // Client-side filtered view (search_text is not a valid Navigator API param)
+  const displayedAgreements = search.trim()
+    ? agreements.filter((ag) => {
+        const q = search.toLowerCase();
+        const inName = (ag.name ?? "").toLowerCase().includes(q);
+        const inType = (ag.type ?? "").toLowerCase().includes(q);
+        const inSource = (ag.source_name ?? "").toLowerCase().includes(q);
+        const inParties = (ag.parties ?? []).some((p) =>
+          (p.name_in_agreement ?? p.name ?? "").toLowerCase().includes(q)
+        );
+        return inName || inType || inSource || inParties;
+      })
+    : agreements;
+
   const handleLogout = async () => {
     await fetch(`${API_BASE}/docusign/auth/logout`, { method: "POST" });
     onLogout();
@@ -781,8 +795,8 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
     setLoading(true);
     setError(null);
 
+    // search is applied client-side; only send valid Navigator API params
     const params: Record<string, string> = {};
-    if (search.trim()) params["search_text"] = search.trim();
     if (statusFilter !== "all") params["status"] = statusFilter;
     params["limit"] = limitFilter;
 
@@ -818,7 +832,7 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
     } finally {
       setLoading(false);
     }
-  }, [search, statusFilter, limitFilter]);
+  }, [statusFilter, limitFilter]);
 
   const displayName = auth.user?.name ?? auth.user?.email ?? null;
 
@@ -879,9 +893,8 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
               <label className="block text-xs font-medium text-gray-600 mb-1.5">Search</label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <Input className="pl-9 h-9 text-sm" placeholder="Search agreements..."
-                  value={search} onChange={(e) => setSearch(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") void fetchAgreements(); }} />
+                <Input className="pl-9 h-9 text-sm" placeholder="Filter by name, party, type…"
+                  value={search} onChange={(e) => setSearch(e.target.value)} />
               </div>
             </div>
             <div className="w-36">
@@ -952,8 +965,17 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
               <span className="text-sm text-gray-500">
                 {loading ? "Loading..." : (
                   <>
-                    <span className="font-semibold text-gray-900">{agreements.length}</span> agreement{agreements.length !== 1 ? "s" : ""}
-                    {rawResponse?.total != null && <span className="text-gray-400"> of {rawResponse.total} total</span>}
+                    <span className="font-semibold text-gray-900">{displayedAgreements.length}</span>
+                    {search.trim() && displayedAgreements.length !== agreements.length && (
+                      <span className="text-gray-400"> of {agreements.length}</span>
+                    )}
+                    {" "}agreement{displayedAgreements.length !== 1 ? "s" : ""}
+                    {rawResponse?.total != null && !search.trim() && (
+                      <span className="text-gray-400"> of {rawResponse.total} total</span>
+                    )}
+                    {search.trim() && (
+                      <span className="text-gray-400 ml-1">matching "{search}"</span>
+                    )}
                   </>
                 )}
               </span>
@@ -975,10 +997,17 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
               <pre className="p-5 text-xs text-gray-700 overflow-auto max-h-[520px] bg-gray-50 font-mono leading-relaxed">
                 {JSON.stringify(rawResponse, null, 2)}
               </pre>
-            ) : agreements.length === 0 ? (
+            ) : displayedAgreements.length === 0 ? (
               <div className="py-16 text-center">
                 <FileText className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-                <p className="text-sm text-gray-500 font-medium">No agreements found</p>
+                <p className="text-sm text-gray-500 font-medium">
+                  {search.trim() ? `No agreements match "${search}"` : "No agreements found"}
+                </p>
+                {search.trim() && (
+                  <button onClick={() => setSearch("")} className="mt-2 text-xs text-blue-500 hover:underline">
+                    Clear search
+                  </button>
+                )}
               </div>
             ) : (
               <Table>
@@ -994,7 +1023,7 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {agreements.map((ag, idx) => <AgreementRow key={ag.id ?? idx} agreement={ag} />)}
+                  {displayedAgreements.map((ag, idx) => <AgreementRow key={ag.id ?? idx} agreement={ag} />)}
                 </TableBody>
               </Table>
             )}

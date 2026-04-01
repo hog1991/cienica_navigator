@@ -80,7 +80,7 @@ router.get("/docusign/agreements", async (req: Request, res: Response) => {
     if (req.query["to_date"]) params.set("to_date", String(req.query["to_date"]));
     if (req.query["status"]) params.set("status", String(req.query["status"]));
     if (req.query["type"]) params.set("type", String(req.query["type"]));
-    if (req.query["search_text"]) params.set("search_text", String(req.query["search_text"]));
+    // search_text is not a valid Navigator API parameter — filtering is done client-side
     if (req.query["order_by"]) params.set("order_by", String(req.query["order_by"]));
     if (req.query["order_direction"])
       params.set("order_direction", String(req.query["order_direction"]));
