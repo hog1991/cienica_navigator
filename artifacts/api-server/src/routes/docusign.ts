@@ -43,7 +43,7 @@ router.get("/docusign/debug-info", (_req: Request, res: Response) => {
       mode: authMode,
       authenticated: !!token,
     },
-    scopes: ["adm_store_unified_repo_read"],
+    scopes: ["adm_store_unified_repo_read", "public_dms_document_read"],
     api: {
       baseUrl: "https://api-d.docusign.com/v1",
       environment: "sandbox (developer)",
@@ -54,6 +54,56 @@ router.get("/docusign/debug-info", (_req: Request, res: Response) => {
       tokenEndpoint: "https://account-d.docusign.com/oauth/token",
     },
   });
+});
+
+// Download proxy — fetches a Navigator document using the stored Bearer token
+// and streams it back to the browser as a file download.
+// Usage: GET /api/docusign/document?href=<relative-or-absolute-path>&filename=<name>
+router.get("/docusign/document", async (req: Request, res: Response) => {
+  const tokenRecord = getToken();
+  if (!tokenRecord) {
+    res.status(401).json({ error: "Not authenticated", code: "unauthenticated" });
+    return;
+  }
+
+  const href = req.query["href"] as string | undefined;
+  if (!href) {
+    res.status(400).json({ error: "Missing href query param" });
+    return;
+  }
+
+  // Build full URL — href may be relative (e.g. /accounts/…) or absolute
+  const fullUrl = href.startsWith("http")
+    ? href
+    : `https://api-d.docusign.com/v1${href.startsWith("/") ? "" : "/"}${href}`;
+
+  const filename = (req.query["filename"] as string | undefined) ?? "agreement.pdf";
+
+  try {
+    const apiRes = await fetch(fullUrl, {
+      headers: { Authorization: `Bearer ${tokenRecord.accessToken}` },
+    });
+
+    if (!apiRes.ok) {
+      req.log.warn({ status: apiRes.status, fullUrl }, "Document download failed");
+      res.status(apiRes.status).json({ error: "Document download failed", status: apiRes.status });
+      return;
+    }
+
+    const contentType = apiRes.headers.get("content-type") ?? "application/octet-stream";
+    const contentLength = apiRes.headers.get("content-length");
+
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", `attachment; filename="${filename.replace(/"/g, "'")}"`);
+    if (contentLength) res.setHeader("Content-Length", contentLength);
+
+    const buffer = await apiRes.arrayBuffer();
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    req.log.error({ err }, "Failed to download document");
+    const message = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: message });
+  }
 });
 
 router.get("/docusign/agreements/:agreementId", async (req: Request, res: Response) => {

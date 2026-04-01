@@ -1,0 +1,61 @@
+In the **developer (demo)** environment you *can* both **upload** and **download** documents via Navigator API today, as long as your dev account and token are set up correctly.
+
+### 1. Prereqs in your dev account
+
+1. **Navigator + bulk ingest enabled on the account**
+   - Product has said Navigator API is on all developer accounts by default, with bulk ingest as an extra plan item.  
+   - In demo, confirm in **Admin → Users → Actions → Manage Navigator Access** that the account has:
+     - **Navigator account access**
+     - **Allow Bulk Upload** checked.  
+
+2. **Right plan items & scopes**
+   - Plan items often referenced: **NavigatorAPIDataIn** (upload) and **NavigatorAPIDataOut** (API reads).  
+   - Token scopes used in the upload threads include:
+     - `adm_store_unified_repo_read`
+     - `adm_store_unified_repo_write`
+     - `document_uploader_read`
+     - `document_uploader_write`
+     - plus usual `signature` / `impersonation` etc.  
+
+---
+
+### 2. Upload in developer: bulk job flow
+
+The pattern teams use in dev/demo is:
+
+1. **Create bulk upload job**  
+   - Call the **Bulk Upload Job** endpoint (see *CreateBulkUploadJob* in the dev docs). This returns:
+     - A **job id**
+     - One or more **presigned Azure Blob `upload_document` URLs** for each file you’ll PUT.  
+
+2. **Upload each document to Azure Blob**
+   - For each `upload_document` URL, issue an HTTP `PUT` directly to Azure with headers like:  
+     - `x-ms-blob-type: BlockBlob`  
+     - `x-ms-meta-filename: <YourDocumentName.pdf>`  
+     - `Content-Type: application/pdf` (or other correct MIME type)  
+   - **Do not send an `Authorization` header** on this PUT; it’s a pre-signed SAS URL and fails if you add your own bearer.  
+
+3. **Complete the bulk job**
+   - Call the **“complete”** action for the job (the “actions/complete” endpoint for that job id). This tells Navigator to ingest/process all uploaded docs.  
+
+That full flow is working in dev/demo accounts today (the 2026 threads where people debugged this are all on demo/dev accounts).  
+
+---
+
+### 3. Download in developer
+
+Historically, only eSign-derived documents could be downloaded via **eSign API**; manually uploaded Navigator docs had no download API.  
+
+More recently:
+
+- The **Navigator auth docs** call out `public_dms_document_read` for document download, and engineering confirms you **get a document download URL from `getAgreements`** when that scope is present.  
+
+So the current pattern is:
+
+1. Use **Navigator API** (`getAgreementsList` / `getAgreement`) to get the agreement record.  
+2. Read the **document download URL** field from the agreement payload.  
+3. **GET** that URL to download the file (it’s returned as a pre-signed DMS URL; typically you call it as-is rather than adding your own Authorization header, similar to the upload SAS URLs).  
+
+---
+
+If you’d like, I can write out a concrete **Postman-style sequence** for dev (including example JSON bodies and the minimal scope set) you can copy-paste into your Navigator API collection.

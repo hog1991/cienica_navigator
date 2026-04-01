@@ -39,6 +39,7 @@ import {
   LogOut,
   User,
   ExternalLink,
+  Download,
   DollarSign,
   CalendarDays,
   Globe,
@@ -731,12 +732,18 @@ function DetailPanel({
 
               {/* Footer row */}
               <div className="flex items-center gap-4 pt-3 border-t border-gray-100">
-                {src._links?.document?.href && (
-                  <a href={src._links.document.href} target="_blank" rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:underline">
-                    <ExternalLink className="w-3 h-3" /> View document
-                  </a>
-                )}
+                {src._links?.document?.href && (() => {
+                  const rawHref = src._links!.document!.href;
+                  const rawName = src.file_name ?? src.title ?? src.id ?? "agreement";
+                  const filename = /\.\w{2,5}$/.test(rawName) ? rawName : `${rawName}.pdf`;
+                  const proxyUrl = `${API_BASE}/docusign/document?href=${encodeURIComponent(rawHref)}&filename=${encodeURIComponent(filename)}`;
+                  return (
+                    <a href={proxyUrl} download={filename}
+                      className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 hover:underline font-medium">
+                      <Download className="w-3 h-3" /> Download document
+                    </a>
+                  );
+                })()}
                 {src.id && (
                   <span className="text-xs text-gray-300 font-mono ml-auto">ID: {src.id}</span>
                 )}
