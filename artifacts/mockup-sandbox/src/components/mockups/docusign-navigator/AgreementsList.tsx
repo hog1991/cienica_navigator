@@ -732,13 +732,16 @@ function AgreementRow({
             <FileText className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
             <div className="min-w-0">
               <p className="font-medium text-sm text-gray-900 truncate max-w-[230px]">
-                {agreement.name ?? "Untitled Agreement"}
+                {detail?.name ?? agreement.name ?? "Untitled Agreement"}
+                {detailLoading && !detail && (
+                  <span className="ml-1.5 inline-block w-3 h-3 rounded-full border border-gray-300 border-t-blue-400 animate-spin align-middle" />
+                )}
               </p>
-              {agreement.source_name && (
+              {(detail?.source_name ?? agreement.source_name) && (
                 <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[230px]">
-                  via {agreement.source_name}
-                  {agreement.source_id && (
-                    <span className="font-mono text-gray-300"> · {agreement.source_id.slice(0, 8)}…</span>
+                  via {detail?.source_name ?? agreement.source_name}
+                  {(detail?.source_id ?? agreement.source_id) && (
+                    <span className="font-mono text-gray-300"> · {(detail?.source_id ?? agreement.source_id)!.slice(0, 8)}…</span>
                   )}
                 </p>
               )}
