@@ -1525,7 +1525,12 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
               </div>
               <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Navigator Agreements</h1>
             </div>
-            <p className="text-sm text-gray-500 ml-12">AI-extracted agreement metadata from Docusign Navigator</p>
+            <p className="text-sm text-gray-500 ml-12">
+              AI-extracted agreement metadata from{" "}
+              {auth.accountName ?? auth.user?.accountName
+                ? <span className="font-medium text-gray-700">{auth.accountName ?? auth.user?.accountName}</span>
+                : "Docusign Navigator"}
+            </p>
           </div>
           <div className="flex items-center gap-2">
             {displayName && (
