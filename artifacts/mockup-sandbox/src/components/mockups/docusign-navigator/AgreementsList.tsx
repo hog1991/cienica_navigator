@@ -1037,8 +1037,17 @@ function UploadDialog({
         body: JSON.stringify({ count: files.length }),
       });
       if (!startRes.ok) {
-        const err = (await startRes.json()) as { error?: string };
-        throw new Error(err.error ?? `Job creation failed (${startRes.status})`);
+        const err = (await startRes.json().catch(() => ({}))) as {
+          error?: string;
+          rawText?: string;
+          details?: unknown;
+        };
+        const detail = typeof err.details === "string"
+          ? err.details
+          : err.rawText
+            ? err.rawText.slice(0, 200)
+            : JSON.stringify(err.details ?? "");
+        throw new Error(`${err.error ?? `Job creation failed (${startRes.status})`}${detail ? ` — ${detail}` : ""}`);
       }
       const jobData = (await startRes.json()) as {
         job_id: string;

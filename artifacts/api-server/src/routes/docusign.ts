@@ -237,15 +237,25 @@ router.post("/docusign/upload/start", async (req: Request, res: Response) => {
       },
       body: JSON.stringify({ count }),
     });
-    const data = await apiRes.json();
+
+    // Always read as text first to avoid JSON parse crashes on error pages
+    const rawText = await apiRes.text();
+    let data: unknown;
+    try { data = JSON.parse(rawText); } catch { data = rawText; }
+
     if (!apiRes.ok) {
-      req.log.warn({ status: apiRes.status, data }, "Bulk upload job creation failed");
-      res.status(apiRes.status).json({ error: "Failed to create upload job", details: data });
+      req.log.warn({ status: apiRes.status, rawText, url }, "Bulk upload job creation failed");
+      res.status(apiRes.status).json({
+        error: `DocuSign API error (${apiRes.status})`,
+        details: data,
+        rawText,
+      });
       return;
     }
     res.json(data);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
+    req.log.error({ err }, "Upload start route crashed");
     res.status(500).json({ error: message });
   }
 });
