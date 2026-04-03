@@ -52,6 +52,8 @@ import {
   Key,
   Copy,
   Check,
+  Upload,
+  Trash2,
 } from "lucide-react";
 
 const API_BASE = "/api";
@@ -606,6 +608,7 @@ function DetailPanel({
   error,
   showRaw,
   onToggleRaw,
+  onDelete,
 }: {
   agreement: Agreement;
   detail: Agreement | null;
@@ -613,8 +616,35 @@ function DetailPanel({
   error: string | null;
   showRaw: boolean;
   onToggleRaw: () => void;
+  onDelete?: (id: string) => void;
 }) {
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   const src = detail ?? agreement;
+
+  const handleDelete = async () => {
+    if (!src.id || deleting) return;
+    const label = src.title ?? src.name ?? src.id;
+    if (!window.confirm(`Delete "${label}"? This cannot be undone.`)) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`${API_BASE}/docusign/agreements/${encodeURIComponent(src.id)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        setDeleteError(data.error ?? `Delete failed (${res.status})`);
+      } else {
+        onDelete?.(src.id);
+      }
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setDeleting(false);
+    }
+  };
   const p = src.provisions ?? {};
   const currency = formatCurrency(p.total_agreement_value, p.total_agreement_value_currency_code);
   const renewalLabel = p.renewal_type
@@ -731,7 +761,7 @@ function DetailPanel({
               )}
 
               {/* Footer row */}
-              <div className="flex items-center gap-4 pt-3 border-t border-gray-100">
+              <div className="flex items-center gap-4 pt-3 border-t border-gray-100 flex-wrap">
                 {src._links?.document?.href && (() => {
                   const rawHref = src._links!.document!.href;
                   const rawName = src.file_name ?? src.title ?? src.id ?? "agreement";
@@ -744,6 +774,21 @@ function DetailPanel({
                     </a>
                   );
                 })()}
+                {src.source_name === "external" && onDelete && (
+                  <button
+                    onClick={() => void handleDelete()}
+                    disabled={deleting}
+                    className="inline-flex items-center gap-1.5 text-xs text-red-500 hover:text-red-700 hover:underline font-medium disabled:opacity-50">
+                    {deleting
+                      ? <><RefreshCw className="w-3 h-3 animate-spin" /> Deleting…</>
+                      : <><Trash2 className="w-3 h-3" /> Delete (external)</>}
+                  </button>
+                )}
+                {deleteError && (
+                  <span className="text-xs text-red-500 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> {deleteError}
+                  </span>
+                )}
                 {src.id && (
                   <span className="text-xs text-gray-300 font-mono ml-auto">ID: {src.id}</span>
                 )}
@@ -761,9 +806,11 @@ function DetailPanel({
 function AgreementRow({
   agreement,
   onDetailFetch,
+  onDelete,
 }: {
   agreement: Agreement;
   onDetailFetch: (call: LastCall) => void;
+  onDelete?: (id: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState<Agreement | null>(null);
@@ -898,6 +945,7 @@ function AgreementRow({
           error={detailError}
           showRaw={showRaw}
           onToggleRaw={() => setShowRaw((r) => !r)}
+          onDelete={onDelete}
         />
       )}
     </>
@@ -930,6 +978,256 @@ function StatsBar({ agreements, totalCount }: { agreements: Agreement[]; totalCo
         </div>
       ))}
     </div>
+  );
+}
+
+// ─── Upload dialog ────────────────────────────────────────────────────────────
+
+interface UploadFileItem {
+  file: File;
+  status: "idle" | "uploading" | "done" | "error";
+  error?: string;
+}
+
+function UploadDialog({
+  open,
+  onClose,
+  onComplete,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onComplete: () => void;
+}) {
+  const [files, setFiles] = useState<UploadFileItem[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [done, setDone] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [globalError, setGlobalError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const reset = () => { setFiles([]); setUploading(false); setDone(false); setGlobalError(null); };
+  const handleClose = () => { reset(); onClose(); };
+
+  const addFiles = (incoming: FileList | File[]) => {
+    const pdfs = Array.from(incoming).filter(
+      (f) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"),
+    );
+    setFiles((prev) => [...prev, ...pdfs.map((f) => ({ file: f, status: "idle" as const }))]);
+  };
+
+  const removeFile = (idx: number) =>
+    setFiles((prev) => prev.filter((_, i) => i !== idx));
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    addFiles(e.dataTransfer.files);
+  };
+
+  const handleUpload = async () => {
+    if (files.length === 0 || uploading) return;
+    setUploading(true);
+    setGlobalError(null);
+
+    try {
+      // Step 1: create bulk upload job
+      const startRes = await fetch(`${API_BASE}/docusign/upload/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ count: files.length }),
+      });
+      if (!startRes.ok) {
+        const err = (await startRes.json()) as { error?: string };
+        throw new Error(err.error ?? `Job creation failed (${startRes.status})`);
+      }
+      const jobData = (await startRes.json()) as {
+        job_id: string;
+        documents: Array<{ document_id: string; upload_url: string }>;
+      };
+
+      // Step 2: upload each file to its SAS slot
+      await Promise.all(
+        files.map(async (item, idx) => {
+          const slot = jobData.documents[idx];
+          if (!slot) {
+            setFiles((prev) =>
+              prev.map((f, i) => i === idx ? { ...f, status: "error", error: "No upload slot assigned" } : f),
+            );
+            return;
+          }
+          setFiles((prev) => prev.map((f, i) => i === idx ? { ...f, status: "uploading" } : f));
+          try {
+            const qs = new URLSearchParams({
+              upload_url: slot.upload_url,
+              filename: item.file.name,
+            });
+            const fileRes = await fetch(`${API_BASE}/docusign/upload/file?${qs}`, {
+              method: "POST",
+              headers: {
+                "Content-Type": item.file.type || "application/pdf",
+                "x-file-type": item.file.type || "application/pdf",
+              },
+              body: item.file,
+            });
+            if (!fileRes.ok) {
+              const err = (await fileRes.json()) as { error?: string };
+              setFiles((prev) =>
+                prev.map((f, i) =>
+                  i === idx ? { ...f, status: "error", error: err.error ?? `Upload failed (${fileRes.status})` } : f,
+                ),
+              );
+            } else {
+              setFiles((prev) => prev.map((f, i) => i === idx ? { ...f, status: "done" } : f));
+            }
+          } catch (err) {
+            setFiles((prev) =>
+              prev.map((f, i) =>
+                i === idx ? { ...f, status: "error", error: err instanceof Error ? err.message : "Upload failed" } : f,
+              ),
+            );
+          }
+        }),
+      );
+
+      // Step 3: complete the job
+      const completeRes = await fetch(`${API_BASE}/docusign/upload/complete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_id: jobData.job_id }),
+      });
+      if (!completeRes.ok) {
+        const err = (await completeRes.json()) as { error?: string };
+        setGlobalError(`Job completion failed: ${err.error ?? completeRes.status}. Files may still be processed.`);
+      }
+
+      setDone(true);
+    } catch (err) {
+      setGlobalError(err instanceof Error ? err.message : "Upload failed");
+      setFiles((prev) =>
+        prev.map((f) => f.status === "idle" ? { ...f, status: "error", error: "Aborted" } : f),
+      );
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const successCount = files.filter((f) => f.status === "done").length;
+  const errorCount = files.filter((f) => f.status === "error").length;
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v && !uploading) handleClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Upload className="w-4 h-4" /> Upload Documents to Navigator
+          </DialogTitle>
+        </DialogHeader>
+
+        {done ? (
+          <div className="py-4 text-center">
+            <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-3">
+              <CheckCircle2 className="w-6 h-6 text-green-600" />
+            </div>
+            <p className="font-semibold text-gray-900 mb-1">
+              {successCount} document{successCount !== 1 ? "s" : ""} submitted
+            </p>
+            <p className="text-sm text-gray-500 mb-1">
+              Tagged as{" "}
+              <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-xs">external</span>.{" "}
+              Navigator is processing them — they'll appear in the list shortly.
+            </p>
+            {globalError && (
+              <p className="text-xs text-amber-600 mt-2 bg-amber-50 border border-amber-100 rounded px-3 py-2">{globalError}</p>
+            )}
+            {errorCount > 0 && (
+              <p className="text-xs text-red-500 mt-1">{errorCount} file(s) had errors during upload.</p>
+            )}
+            <div className="flex gap-2 mt-5 justify-center">
+              <Button variant="outline" onClick={handleClose}>Close</Button>
+              <Button
+                className="bg-[#1B1E2E] hover:bg-[#2b3050] text-white gap-1.5"
+                onClick={() => { handleClose(); onComplete(); }}>
+                <RefreshCw className="w-3.5 h-3.5" /> Refresh agreements
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Drop zone */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors mt-1 ${
+                dragOver ? "border-blue-400 bg-blue-50" : "border-gray-200 hover:border-gray-300 hover:bg-gray-50/60"
+              }`}>
+              <Upload className="w-7 h-7 text-gray-300 mx-auto mb-2" />
+              <p className="text-sm font-medium text-gray-600">Drop PDFs here or click to browse</p>
+              <p className="text-xs text-gray-400 mt-1">PDF files only · Multiple allowed</p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,application/pdf"
+                multiple
+                className="hidden"
+                onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }}
+              />
+            </div>
+
+            {/* File list */}
+            {files.length > 0 && (
+              <div className="mt-3 space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                {files.map((item, idx) => (
+                  <div key={idx}
+                    className="flex items-center gap-3 px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">
+                    <FileText className="w-4 h-4 text-gray-400 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-gray-700 truncate">{item.file.name}</p>
+                      <p className="text-[10px] text-gray-400">{(item.file.size / 1024).toFixed(0)} KB</p>
+                      {item.status === "error" && item.error && (
+                        <p className="text-[10px] text-red-500 truncate">{item.error}</p>
+                      )}
+                    </div>
+                    {item.status === "idle" && !uploading && (
+                      <button onClick={(e) => { e.stopPropagation(); removeFile(idx); }}
+                        className="p-1 text-gray-300 hover:text-red-400 transition-colors">
+                        <XCircle className="w-4 h-4" />
+                      </button>
+                    )}
+                    {item.status === "uploading" && <RefreshCw className="w-4 h-4 text-blue-500 animate-spin shrink-0" />}
+                    {item.status === "done" && <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />}
+                    {item.status === "error" && <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {globalError && (
+              <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded px-3 py-2 mt-2">{globalError}</p>
+            )}
+
+            <p className="text-xs text-gray-400 mt-2">
+              Files will be tagged as{" "}
+              <span className="font-mono bg-gray-100 px-1 rounded text-[11px]">source_name: external</span>{" "}
+              in Navigator for easy identification.
+            </p>
+
+            <div className="flex gap-2 mt-3 justify-end">
+              <Button variant="outline" onClick={handleClose} disabled={uploading}>Cancel</Button>
+              <Button
+                className="bg-[#1B1E2E] hover:bg-[#2b3050] text-white gap-1.5"
+                onClick={() => void handleUpload()}
+                disabled={files.length === 0 || uploading}>
+                {uploading
+                  ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Uploading…</>
+                  : <><Upload className="w-3.5 h-3.5" /> Upload {files.length > 0 ? `${files.length} ` : ""}document{files.length !== 1 ? "s" : ""}</>}
+              </Button>
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -999,6 +1297,7 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
   const [fetched, setFetched] = useState(false);
   const [lastCall, setLastCall] = useState<LastCall | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   // Basic controls
   const [search, setSearch] = useState("");
@@ -1220,6 +1519,10 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
                 <span className="hidden sm:block text-sm">{displayName}</span>
               </div>
             )}
+            <Button variant="outline" size="sm" className="gap-1.5 text-gray-600 h-8"
+              onClick={() => setUploadOpen(true)}>
+              <Upload className="w-3.5 h-3.5" /> Upload
+            </Button>
             <Button variant="outline" size="sm" className="h-8 w-8 p-0 text-gray-600"
               onClick={() => setSettingsOpen(true)} title="Settings & Debug">
               <Settings className="w-4 h-4" />
@@ -1519,7 +1822,8 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
                 <TableBody>
                   {displayedAgreements.map((ag, idx) => (
                     <AgreementRow key={ag.id ?? idx} agreement={ag}
-                      onDetailFetch={(call) => setLastCall(call)} />
+                      onDetailFetch={(call) => setLastCall(call)}
+                      onDelete={(id) => setAgreements((prev) => prev.filter((a) => a.id !== id))} />
                   ))}
                 </TableBody>
               </Table>
@@ -1585,6 +1889,11 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
       </div>
 
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} auth={auth} lastCall={lastCall} />
+      <UploadDialog
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        onComplete={() => void fetchAgreements()}
+      />
     </div>
   );
 }

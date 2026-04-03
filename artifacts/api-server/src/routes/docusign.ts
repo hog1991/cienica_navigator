@@ -1,4 +1,4 @@
-import { Router, type IRouter, type Request, type Response } from "express";
+import express, { Router, type IRouter, type Request, type Response } from "express";
 import { getToken } from "../lib/docusign-token.js";
 
 const router: IRouter = Router();
@@ -211,6 +211,145 @@ router.get("/docusign/agreements", async (req: Request, res: Response) => {
     res.json(data);
   } catch (err) {
     req.log.error({ err }, "Failed to fetch Docusign agreements");
+    const message = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: message });
+  }
+});
+
+// ─── Upload: Step 1 — create bulk upload job ─────────────────────────────────
+router.post("/docusign/upload/start", async (req: Request, res: Response) => {
+  const tokenRecord = getToken();
+  if (!tokenRecord) { res.status(401).json({ error: "Not authenticated" }); return; }
+  const accountId = process.env["DOCUSIGN_ACCOUNT_ID"];
+  if (!accountId) { res.status(500).json({ error: "DOCUSIGN_ACCOUNT_ID not configured" }); return; }
+
+  const body = req.body as { count?: number };
+  const count = Number(body.count ?? 0);
+  if (!count || count < 1) { res.status(400).json({ error: "count must be >= 1" }); return; }
+
+  try {
+    const url = `${DOCUSIGN_BASE_URL}/accounts/${accountId}/bulk_upload_job`;
+    const apiRes = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${tokenRecord.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ count }),
+    });
+    const data = await apiRes.json();
+    if (!apiRes.ok) {
+      req.log.warn({ status: apiRes.status, data }, "Bulk upload job creation failed");
+      res.status(apiRes.status).json({ error: "Failed to create upload job", details: data });
+      return;
+    }
+    res.json(data);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: message });
+  }
+});
+
+// ─── Upload: Step 2 — proxy PUT to Azure Blob SAS URL ────────────────────────
+// Accepts raw binary body; upload_url and filename are query params.
+router.post(
+  "/docusign/upload/file",
+  express.raw({ type: "*/*", limit: "50mb" }),
+  async (req: Request, res: Response) => {
+    const uploadUrl = req.query["upload_url"] as string | undefined;
+    const filename = req.query["filename"] as string | undefined;
+    if (!uploadUrl) { res.status(400).json({ error: "Missing upload_url" }); return; }
+
+    try {
+      const blob = req.body as Buffer;
+      const mimeType = (req.headers["x-file-type"] as string | undefined) ?? "application/pdf";
+
+      const blobRes = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: {
+          "x-ms-blob-type": "BlockBlob",
+          "Content-Type": mimeType,
+          "x-ms-meta-source_name": "external",
+          ...(filename ? { "x-ms-meta-filename": encodeURIComponent(filename) } : {}),
+        },
+        body: blob,
+      });
+
+      if (!blobRes.ok) {
+        const text = await blobRes.text().catch(() => "");
+        req.log.warn({ status: blobRes.status, uploadUrl }, "File upload to blob failed");
+        res.status(blobRes.status).json({ error: "File upload failed", details: text });
+        return;
+      }
+
+      res.json({ ok: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      res.status(500).json({ error: message });
+    }
+  },
+);
+
+// ─── Upload: Step 3 — complete bulk upload job ───────────────────────────────
+router.post("/docusign/upload/complete", async (req: Request, res: Response) => {
+  const tokenRecord = getToken();
+  if (!tokenRecord) { res.status(401).json({ error: "Not authenticated" }); return; }
+  const accountId = process.env["DOCUSIGN_ACCOUNT_ID"];
+  if (!accountId) { res.status(500).json({ error: "DOCUSIGN_ACCOUNT_ID not configured" }); return; }
+
+  const { job_id } = req.body as { job_id?: string };
+  if (!job_id) { res.status(400).json({ error: "Missing job_id" }); return; }
+
+  try {
+    const url = `${DOCUSIGN_BASE_URL}/accounts/${accountId}/bulk_upload_job/${encodeURIComponent(job_id)}/actions/complete`;
+    const apiRes = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${tokenRecord.accessToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!apiRes.ok) {
+      const data = await apiRes.json().catch(() => ({}));
+      req.log.warn({ status: apiRes.status, data, job_id }, "Bulk upload complete failed");
+      res.status(apiRes.status).json({ error: "Failed to complete upload job", details: data });
+      return;
+    }
+
+    const data = await apiRes.json().catch(() => ({ ok: true }));
+    res.json(data);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: message });
+  }
+});
+
+// ─── Delete agreement ─────────────────────────────────────────────────────────
+router.delete("/docusign/agreements/:agreementId", async (req: Request, res: Response) => {
+  const tokenRecord = getToken();
+  if (!tokenRecord) { res.status(401).json({ error: "Not authenticated" }); return; }
+  const accountId = process.env["DOCUSIGN_ACCOUNT_ID"];
+  if (!accountId) { res.status(500).json({ error: "DOCUSIGN_ACCOUNT_ID not configured" }); return; }
+
+  const { agreementId } = req.params;
+
+  try {
+    const url = `${DOCUSIGN_BASE_URL}/accounts/${accountId}/agreements/${encodeURIComponent(agreementId)}`;
+    const apiRes = await fetch(url, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${tokenRecord.accessToken}` },
+    });
+
+    if (!apiRes.ok) {
+      const data = await apiRes.json().catch(() => ({}));
+      req.log.warn({ status: apiRes.status, data, agreementId }, "Agreement delete failed");
+      res.status(apiRes.status).json({ error: "Delete failed", details: data });
+      return;
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     res.status(500).json({ error: message });
   }
