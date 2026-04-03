@@ -1329,6 +1329,7 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
   const [partyFilter, setPartyFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [reviewStatusFilter, setReviewStatusFilter] = useState("all");
+  const [sourceFilter, setSourceFilter] = useState("all");
   const [sortField, setSortField] = useState("all");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [effectiveDateFrom, setEffectiveDateFrom] = useState("");
@@ -1342,12 +1343,13 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
     if (customFilter.trim()) return customFilter.trim();
     const parts: string[] = [];
     if (typeFilter !== "all") parts.push(`type eq '${typeFilter}'`);
+    if (sourceFilter !== "all") parts.push(`source_name eq '${sourceFilter}'`);
     if (effectiveDateFrom) parts.push(`provisions/effective_date ge ${effectiveDateFrom}`);
     if (effectiveDateTo) parts.push(`provisions/effective_date le ${effectiveDateTo}`);
     if (expirationDateFrom) parts.push(`provisions/expiration_date ge ${expirationDateFrom}`);
     if (expirationDateTo) parts.push(`provisions/expiration_date le ${expirationDateTo}`);
     return parts.join(" and ");
-  }, [customFilter, typeFilter, effectiveDateFrom, effectiveDateTo, expirationDateFrom, expirationDateTo]);
+  }, [customFilter, typeFilter, sourceFilter, effectiveDateFrom, effectiveDateTo, expirationDateFrom, expirationDateTo]);
 
   const builtFilter = buildODataFilter();
 
@@ -1485,7 +1487,7 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
     }
   }, [nextCtoken, statusFilter, limitFilter, titleFilter, partyFilter, reviewStatusFilter, sortField, sortDirection, buildODataFilter]);
 
-  const hasAdvancedFilters = typeFilter !== "all" || reviewStatusFilter !== "all" || sortField !== "all"
+  const hasAdvancedFilters = typeFilter !== "all" || reviewStatusFilter !== "all" || sourceFilter !== "all" || sortField !== "all"
     || effectiveDateFrom || effectiveDateTo || expirationDateFrom || expirationDateTo || customFilter || titleFilter || partyFilter;
 
   const hasAnyFilter = !!search.trim() || statusFilter !== "all" || fetchAllPages || hasAdvancedFilters;
@@ -1499,6 +1501,7 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
     setPartyFilter("");
     setTypeFilter("all");
     setReviewStatusFilter("all");
+    setSourceFilter("all");
     setSortField("all");
     setSortDirection("desc");
     setEffectiveDateFrom("");
@@ -1667,6 +1670,18 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
                       <SelectItem value="all">Any</SelectItem>
                       <SelectItem value="COMPLETE">Complete</SelectItem>
                       <SelectItem value="PENDING">Pending</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* Source */}
+                <div className="w-36">
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Source</label>
+                  <Select value={sourceFilter} onValueChange={setSourceFilter}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Any source</SelectItem>
+                      <SelectItem value="external">External (uploaded)</SelectItem>
+                      <SelectItem value="docusign">DocuSign</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
