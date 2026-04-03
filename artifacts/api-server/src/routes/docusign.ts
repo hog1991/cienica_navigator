@@ -200,11 +200,13 @@ router.get("/docusign/agreements", async (req: Request, res: Response) => {
       },
     });
 
-    const data = (await apiRes.json()) as unknown;
+    const rawText = await apiRes.text();
+    let data: unknown;
+    try { data = JSON.parse(rawText); } catch { data = rawText; }
 
     if (!apiRes.ok) {
-      req.log.warn({ status: apiRes.status, data }, "Docusign API error");
-      res.status(apiRes.status).json({ error: "Docusign API error", details: data });
+      req.log.warn({ status: apiRes.status, rawText }, "Docusign API error");
+      res.status(apiRes.status).json({ error: typeof data === "string" ? data : "Docusign API error", details: data });
       return;
     }
 

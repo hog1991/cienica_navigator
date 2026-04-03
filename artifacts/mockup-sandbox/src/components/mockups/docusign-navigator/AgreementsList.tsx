@@ -1343,30 +1343,29 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
     if (customFilter.trim()) return customFilter.trim();
     const parts: string[] = [];
     if (typeFilter !== "all") parts.push(`type eq '${typeFilter}'`);
-    if (sourceFilter !== "all") parts.push(`source_name eq '${sourceFilter}'`);
     if (effectiveDateFrom) parts.push(`provisions/effective_date ge ${effectiveDateFrom}`);
     if (effectiveDateTo) parts.push(`provisions/effective_date le ${effectiveDateTo}`);
     if (expirationDateFrom) parts.push(`provisions/expiration_date ge ${expirationDateFrom}`);
     if (expirationDateTo) parts.push(`provisions/expiration_date le ${expirationDateTo}`);
     return parts.join(" and ");
-  }, [customFilter, typeFilter, sourceFilter, effectiveDateFrom, effectiveDateTo, expirationDateFrom, expirationDateTo]);
+  }, [customFilter, typeFilter, effectiveDateFrom, effectiveDateTo, expirationDateFrom, expirationDateTo]);
 
   const builtFilter = buildODataFilter();
 
-  // Client-side search applied on top of server results
-  const displayedAgreements = search.trim()
-    ? agreements.filter((ag) => {
-        const q = search.toLowerCase();
-        return (
-          (ag.title ?? ag.name ?? "").toLowerCase().includes(q) ||
-          (ag.type ?? "").toLowerCase().includes(q) ||
-          (ag.category ?? "").toLowerCase().includes(q) ||
-          (ag.source_name ?? "").toLowerCase().includes(q) ||
-          (ag.file_name ?? "").toLowerCase().includes(q) ||
-          (ag.parties ?? []).some((p) => (p.name_in_agreement ?? p.name ?? "").toLowerCase().includes(q))
-        );
-      })
-    : agreements;
+  // Client-side search + source filter applied on top of server results
+  const displayedAgreements = agreements.filter((ag) => {
+    if (sourceFilter !== "all" && (ag.source_name ?? "") !== sourceFilter) return false;
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return (
+      (ag.title ?? ag.name ?? "").toLowerCase().includes(q) ||
+      (ag.type ?? "").toLowerCase().includes(q) ||
+      (ag.category ?? "").toLowerCase().includes(q) ||
+      (ag.source_name ?? "").toLowerCase().includes(q) ||
+      (ag.file_name ?? "").toLowerCase().includes(q) ||
+      (ag.parties ?? []).some((p) => (p.name_in_agreement ?? p.name ?? "").toLowerCase().includes(q))
+    );
+  });
 
   const handleLogout = async () => {
     await fetch(`${API_BASE}/docusign/auth/logout`, { method: "POST" });
@@ -1673,9 +1672,9 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
                     </SelectContent>
                   </Select>
                 </div>
-                {/* Source */}
-                <div className="w-36">
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Source</label>
+                {/* Source — client-side filter applied over loaded results */}
+                <div className="w-44">
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Source <span className="font-normal text-gray-400">(client-side)</span></label>
                   <Select value={sourceFilter} onValueChange={setSourceFilter}>
                     <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent>
