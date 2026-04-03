@@ -43,7 +43,7 @@ router.get("/docusign/debug-info", (_req: Request, res: Response) => {
       mode: authMode,
       authenticated: !!token,
     },
-    scopes: ["adm_store_unified_repo_read", "public_dms_document_read"],
+    scopes: ["adm_store_unified_repo_read", "public_dms_document_read", "document_uploader_write", "document_uploader_read"],
     api: {
       baseUrl: "https://api-d.docusign.com/v1",
       environment: "sandbox (developer)",
@@ -228,14 +228,14 @@ router.post("/docusign/upload/start", async (req: Request, res: Response) => {
   if (!count || count < 1) { res.status(400).json({ error: "count must be >= 1" }); return; }
 
   try {
-    const url = `${DOCUSIGN_BASE_URL}/accounts/${accountId}/bulk_upload_job`;
+    const url = `${DOCUSIGN_BASE_URL}/accounts/${accountId}/upload/jobs`;
     const apiRes = await fetch(url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${tokenRecord.accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ count }),
+      body: JSON.stringify({ expected_number_of_docs: count }),
     });
 
     // Always read as text first to avoid JSON parse crashes on error pages
@@ -311,7 +311,7 @@ router.post("/docusign/upload/complete", async (req: Request, res: Response) => 
   if (!job_id) { res.status(400).json({ error: "Missing job_id" }); return; }
 
   try {
-    const url = `${DOCUSIGN_BASE_URL}/accounts/${accountId}/bulk_upload_job/${encodeURIComponent(job_id)}/actions/complete`;
+    const url = `${DOCUSIGN_BASE_URL}/accounts/${accountId}/upload/jobs/${encodeURIComponent(job_id)}/actions/complete`;
     const apiRes = await fetch(url, {
       method: "POST",
       headers: {

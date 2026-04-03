@@ -1049,16 +1049,24 @@ function UploadDialog({
             : JSON.stringify(err.details ?? "");
         throw new Error(`${err.error ?? `Job creation failed (${startRes.status})`}${detail ? ` — ${detail}` : ""}`);
       }
+      // DocuSign response: { id: <jobId>, _embedded: { documents: [{ id, _actions: { upload_document: url } }] } }
       const jobData = (await startRes.json()) as {
-        job_id: string;
-        documents: Array<{ document_id: string; upload_url: string }>;
+        id?: string;
+        job_id?: string; // fallback in case API uses this key
+        _embedded?: { documents?: Array<{ id?: string; _actions?: { upload_document?: string } }> };
+        documents?: Array<{ document_id?: string; upload_url?: string }>; // legacy fallback
       };
+      const jobId = jobData.id ?? jobData.job_id ?? "";
+      const docSlots = jobData._embedded?.documents ?? jobData.documents ?? [];
 
       // Step 2: upload each file to its SAS slot
       await Promise.all(
         files.map(async (item, idx) => {
-          const slot = jobData.documents[idx];
-          if (!slot) {
+          const slot = docSlots[idx];
+          const uploadUrl = (slot as { _actions?: { upload_document?: string }; upload_url?: string } | undefined)
+            ?._actions?.upload_document
+            ?? (slot as { upload_url?: string } | undefined)?.upload_url;
+          if (!slot || !uploadUrl) {
             setFiles((prev) =>
               prev.map((f, i) => i === idx ? { ...f, status: "error", error: "No upload slot assigned" } : f),
             );
@@ -1067,7 +1075,7 @@ function UploadDialog({
           setFiles((prev) => prev.map((f, i) => i === idx ? { ...f, status: "uploading" } : f));
           try {
             const qs = new URLSearchParams({
-              upload_url: slot.upload_url,
+              upload_url: uploadUrl,
               filename: item.file.name,
             });
             const fileRes = await fetch(`${API_BASE}/docusign/upload/file?${qs}`, {
@@ -1102,7 +1110,7 @@ function UploadDialog({
       const completeRes = await fetch(`${API_BASE}/docusign/upload/complete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ job_id: jobData.job_id }),
+        body: JSON.stringify({ job_id: jobId }),
       });
       if (!completeRes.ok) {
         const err = (await completeRes.json()) as { error?: string };
