@@ -185,6 +185,7 @@ router.get("/docusign/agreements", async (req: Request, res: Response) => {
     if (req.query["title"]) params.set("title", String(req.query["title"]));
     if (req.query["parties.name_in_agreement"])
       params.set("parties.name_in_agreement", String(req.query["parties.name_in_agreement"]));
+    if (req.query["source_name"]) params.set("source_name", String(req.query["source_name"]));
     // OData $filter string (built by the client)
     if (req.query["$filter"]) params.set("$filter", String(req.query["$filter"]));
     // Sort

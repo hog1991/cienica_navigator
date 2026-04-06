@@ -1352,20 +1352,20 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
 
   const builtFilter = buildODataFilter();
 
-  // Client-side search + source filter applied on top of server results
-  const displayedAgreements = agreements.filter((ag) => {
-    if (sourceFilter !== "all" && (ag.source_name ?? "") !== sourceFilter) return false;
-    if (!search.trim()) return true;
-    const q = search.toLowerCase();
-    return (
-      (ag.title ?? ag.name ?? "").toLowerCase().includes(q) ||
-      (ag.type ?? "").toLowerCase().includes(q) ||
-      (ag.category ?? "").toLowerCase().includes(q) ||
-      (ag.source_name ?? "").toLowerCase().includes(q) ||
-      (ag.file_name ?? "").toLowerCase().includes(q) ||
-      (ag.parties ?? []).some((p) => (p.name_in_agreement ?? p.name ?? "").toLowerCase().includes(q))
-    );
-  });
+  // Client-side search applied on top of server results
+  const displayedAgreements = search.trim()
+    ? agreements.filter((ag) => {
+        const q = search.toLowerCase();
+        return (
+          (ag.title ?? ag.name ?? "").toLowerCase().includes(q) ||
+          (ag.type ?? "").toLowerCase().includes(q) ||
+          (ag.category ?? "").toLowerCase().includes(q) ||
+          (ag.source_name ?? "").toLowerCase().includes(q) ||
+          (ag.file_name ?? "").toLowerCase().includes(q) ||
+          (ag.parties ?? []).some((p) => (p.name_in_agreement ?? p.name ?? "").toLowerCase().includes(q))
+        );
+      })
+    : agreements;
 
   const handleLogout = async () => {
     await fetch(`${API_BASE}/docusign/auth/logout`, { method: "POST" });
@@ -1382,6 +1382,7 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
     if (titleFilter.trim()) params["title"] = titleFilter.trim();
     if (partyFilter.trim()) params["parties.name_in_agreement"] = partyFilter.trim();
     if (reviewStatusFilter !== "all") params["review_status"] = reviewStatusFilter;
+    if (sourceFilter !== "all") params["source_name"] = sourceFilter;
     if (sortField !== "all") { params["sort"] = sortField; params["direction"] = sortDirection; }
     const odata = buildODataFilter();
     if (odata) params["$filter"] = odata;
@@ -1459,6 +1460,7 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
     if (titleFilter.trim()) params["title"] = titleFilter.trim();
     if (partyFilter.trim()) params["parties.name_in_agreement"] = partyFilter.trim();
     if (reviewStatusFilter !== "all") params["review_status"] = reviewStatusFilter;
+    if (sourceFilter !== "all") params["source_name"] = sourceFilter;
     if (sortField !== "all") { params["sort"] = sortField; params["direction"] = sortDirection; }
     const odata = buildODataFilter();
     if (odata) params["$filter"] = odata;
@@ -1672,9 +1674,9 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
                     </SelectContent>
                   </Select>
                 </div>
-                {/* Source — client-side filter applied over loaded results */}
-                <div className="w-44">
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Source <span className="font-normal text-gray-400">(client-side)</span></label>
+                {/* Source */}
+                <div className="w-36">
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Source</label>
                   <Select value={sourceFilter} onValueChange={setSourceFilter}>
                     <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent>
