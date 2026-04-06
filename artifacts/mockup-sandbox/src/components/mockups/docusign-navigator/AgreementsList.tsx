@@ -954,12 +954,44 @@ function AgreementRow({
 
 // ─── Stats bar ────────────────────────────────────────────────────────────────
 
+type AgreementClass = "active" | "pending" | "expired" | "other";
+
+function classifyAgreement(ag: Agreement): AgreementClass {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const effective = ag.provisions?.effective_date ? new Date(ag.provisions.effective_date) : null;
+  const expiration = ag.provisions?.expiration_date ? new Date(ag.provisions.expiration_date) : null;
+  const renewal = (ag.provisions?.renewal_type as string | undefined) ?? "";
+  const isEvergreen = /^(EVERGREEN|AUTO_RENEW)/i.test(renewal);
+
+  // Expired: past expiration date and not self-renewing
+  if (expiration && expiration < today && !isEvergreen) return "expired";
+
+  // Pending: effective date hasn't arrived yet, or no effective date and still in-progress
+  if (effective && effective > today) return "pending";
+  if (!effective && (ag.status === "IN_PROGRESS" || ag.status === "PENDING")) return "pending";
+
+  // Active: effective date has passed (or missing) and not expired
+  if (effective && effective <= today) return "active";
+
+  // Fallback to API status
+  if (ag.status === "EXPIRED") return "expired";
+  if (ag.status === "IN_PROGRESS") return "pending";
+  if (ag.status === "COMPLETE") return "active";
+
+  return "other";
+}
+
 function StatsBar({ agreements, totalCount }: { agreements: Agreement[]; totalCount: number | null }) {
-  const counts = agreements.reduce<Record<string, number>>((acc, ag) => {
-    const s = (ag.status ?? "unknown").toLowerCase();
-    acc[s] = (acc[s] ?? 0) + 1;
-    return acc;
-  }, {});
+  let active = 0, pending = 0, expired = 0;
+  for (const ag of agreements) {
+    const cls = classifyAgreement(ag);
+    if (cls === "active") active++;
+    else if (cls === "pending") pending++;
+    else if (cls === "expired") expired++;
+  }
+
   const totalValue = agreements.reduce((s, ag) => s + (ag.provisions?.total_agreement_value ?? 0), 0);
   const displayTotal = totalCount ?? agreements.length;
 
@@ -967,9 +999,9 @@ function StatsBar({ agreements, totalCount }: { agreements: Agreement[]; totalCo
     <div className="grid grid-cols-5 gap-3 mb-6">
       {[
         { label: totalCount != null ? "Total" : "Loaded", value: displayTotal, color: "text-gray-900" },
-        { label: "Complete", value: counts["complete"] ?? 0, color: "text-green-700" },
-        { label: "In Progress", value: counts["in_progress"] ?? 0, color: "text-amber-700" },
-        { label: "Expired", value: counts["expired"] ?? 0, color: "text-red-600" },
+        { label: "Active", value: active, color: "text-green-700" },
+        { label: "Pending", value: pending, color: "text-amber-700" },
+        { label: "Expired", value: expired, color: "text-red-600" },
         { label: "Total Value", value: totalValue > 0 ? (formatCurrency(totalValue) ?? "—") : "—", color: "text-blue-700" },
       ].map(({ label, value, color }) => (
         <div key={label} className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3">
