@@ -282,7 +282,6 @@ router.post(
         headers: {
           "x-ms-blob-type": "BlockBlob",
           "Content-Type": mimeType,
-          "x-ms-meta-source_name": "external",
           ...(filename ? { "x-ms-meta-filename": filename } : {}),
         },
         body: blob,

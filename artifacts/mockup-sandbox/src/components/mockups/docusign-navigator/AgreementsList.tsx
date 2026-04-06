@@ -1257,9 +1257,8 @@ function UploadDialog({
             )}
 
             <p className="text-xs text-gray-400 mt-2">
-              Files will be tagged as{" "}
-              <span className="font-mono bg-gray-100 px-1 rounded text-[11px]">source_name: external</span>{" "}
-              in Navigator for easy identification.
+              Uploaded agreements will appear in Navigator with{" "}
+              <span className="font-mono bg-gray-100 px-1 rounded text-[11px]">source_name: UploadApiJob</span>.
             </p>
 
             <div className="flex gap-2 mt-3 justify-end">
@@ -1713,8 +1712,9 @@ function AgreementsView({ auth, onLogout }: { auth: AuthStatus; onLogout: () => 
                     <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">Any source</SelectItem>
-                      <SelectItem value="external">External (uploaded)</SelectItem>
-                      <SelectItem value="docusign">DocuSign</SelectItem>
+                      <SelectItem value="eSign">eSign</SelectItem>
+                      <SelectItem value="UploadApiJob">Upload API Job</SelectItem>
+                      <SelectItem value="UploadCenter">Upload Center</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
