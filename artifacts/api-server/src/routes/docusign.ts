@@ -43,7 +43,7 @@ router.get("/docusign/debug-info", (_req: Request, res: Response) => {
       mode: authMode,
       authenticated: !!token,
     },
-    scopes: ["adm_store_unified_repo_read", "public_dms_document_read", "document_uploader_write", "document_uploader_read"],
+    scopes: ["adm_store_unified_repo_read", "adm_store_unified_repo_write", "public_dms_document_read", "document_uploader_write", "document_uploader_read"],
     api: {
       baseUrl: "https://api-d.docusign.com/v1",
       environment: "sandbox (developer)",

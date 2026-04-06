@@ -4,7 +4,7 @@ import { setToken, getToken, clearToken } from "../lib/docusign-token.js";
 const router: IRouter = Router();
 
 const DOCUSIGN_AUTH_HOST = "https://account-d.docusign.com";
-const SCOPE = "adm_store_unified_repo_read public_dms_document_read document_uploader_write document_uploader_read";
+const SCOPE = "adm_store_unified_repo_read adm_store_unified_repo_write public_dms_document_read document_uploader_write document_uploader_read";
 
 function getRedirectUri(req: Request): string {
   const domains = process.env["REPLIT_DOMAINS"]?.split(",")[0];
