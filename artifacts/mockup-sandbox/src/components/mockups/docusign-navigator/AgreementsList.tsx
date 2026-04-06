@@ -631,7 +631,8 @@ function DetailPanel({
   const handleDelete = async () => {
     if (!src.id || deleting) return;
     const label = src.title ?? src.name ?? src.id;
-    if (!window.confirm(`Delete "${label}"? This cannot be undone.`)) return;
+    const sourceInfo = src.source_name ? ` (source: ${src.source_name})` : "";
+    if (!window.confirm(`Permanently delete "${label}"${sourceInfo}?\n\nThis cannot be undone.`)) return;
     setDeleting(true);
     setDeleteError(null);
     try {
@@ -779,14 +780,14 @@ function DetailPanel({
                     </a>
                   );
                 })()}
-                {src.source_name === "external" && onDelete && (
+                {onDelete && (
                   <button
                     onClick={() => void handleDelete()}
                     disabled={deleting}
                     className="inline-flex items-center gap-1.5 text-xs text-red-500 hover:text-red-700 hover:underline font-medium disabled:opacity-50">
                     {deleting
                       ? <><RefreshCw className="w-3 h-3 animate-spin" /> Deleting…</>
-                      : <><Trash2 className="w-3 h-3" /> Delete (external)</>}
+                      : <><Trash2 className="w-3 h-3" /> Delete agreement</>}
                   </button>
                 )}
                 {deleteError && (
