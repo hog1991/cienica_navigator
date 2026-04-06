@@ -967,8 +967,8 @@ function StatsBar({ agreements, totalCount }: { agreements: Agreement[]; totalCo
     <div className="grid grid-cols-5 gap-3 mb-6">
       {[
         { label: totalCount != null ? "Total" : "Loaded", value: displayTotal, color: "text-gray-900" },
-        { label: "Active", value: counts["active"] ?? 0, color: "text-green-700" },
-        { label: "Pending", value: (counts["pending"] ?? 0) + (counts["in_progress"] ?? 0), color: "text-amber-700" },
+        { label: "Complete", value: counts["complete"] ?? 0, color: "text-green-700" },
+        { label: "In Progress", value: counts["in_progress"] ?? 0, color: "text-amber-700" },
         { label: "Expired", value: counts["expired"] ?? 0, color: "text-red-600" },
         { label: "Total Value", value: totalValue > 0 ? (formatCurrency(totalValue) ?? "—") : "—", color: "text-blue-700" },
       ].map(({ label, value, color }) => (
