@@ -222,14 +222,19 @@ function extractAgreements(data: AgreementsResponse): Agreement[] {
   return data.agreements ?? data.data ?? data.items ?? [];
 }
 
-function statusDot(status?: string): string {
-  const s = (status ?? "").toLowerCase();
-  if (s === "active") return "bg-green-500";
-  if (s === "completed") return "bg-blue-500";
-  if (s === "draft" || s === "pending") return "bg-amber-400";
-  if (s === "voided" || s === "declined" || s === "expired") return "bg-red-400";
+function statusDot(cls: "active" | "pending" | "expired" | "other"): string {
+  if (cls === "active") return "bg-green-500";
+  if (cls === "pending") return "bg-amber-400";
+  if (cls === "expired") return "bg-red-400";
   return "bg-gray-400";
 }
+
+const STATUS_LABELS: Record<"active" | "pending" | "expired" | "other", string> = {
+  active: "Active",
+  pending: "Pending",
+  expired: "Expired",
+  other: "Unknown",
+};
 
 // ─── Copy button ──────────────────────────────────────────────────────────────
 
@@ -901,10 +906,16 @@ function AgreementRow({
         <TableCell className="py-3">
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-1.5">
-              <span className={`w-2 h-2 rounded-full shrink-0 ${statusDot(agreement.status)}`} />
-              <span className="text-xs font-medium text-gray-700">
-                {soon ? "Effective Soon" : (agreement.status ?? "Unknown")}
-              </span>
+              {(() => {
+                const cls = classifyAgreement(agreement);
+                const label = soon ? "Effective Soon" : STATUS_LABELS[cls];
+                return (
+                  <>
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${statusDot(cls)}`} />
+                    <span className="text-xs font-medium text-gray-700">{label}</span>
+                  </>
+                );
+              })()}
             </div>
             {p.effective_date && (
               <span className="text-xs text-gray-400 ml-3.5">Effective {formatDate(p.effective_date)}</span>
