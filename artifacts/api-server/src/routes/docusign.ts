@@ -189,30 +189,45 @@ router.get("/docusign/agreements", async (req: Request, res: any) => {
   }
 
   try {
-    const query = req.query as Record<string, any>;
-    const queryPairs: [string, string][] = [];
-    
-    const addQueryParam = (key: string, val: unknown) => {
-      const raw = Array.isArray(val) ? val[0] : val;
-      const resolved = typeof raw === "string" ? raw : typeof raw === "number" || typeof raw === "boolean" ? String(raw) : "";
-      if (resolved.length > 0) {
-        queryPairs.push([key, resolved]);
-      }
+    const q = req.query as Record<string, any>;
+    const params = new URLSearchParams();
+
+    const getStringParam = (val: unknown): string | undefined => {
+      if (typeof val === "string") return val;
+      if (Array.isArray(val) && typeof val[0] === "string") return val[0];
+      return undefined;
     };
 
-    if (query["ctoken"]) addQueryParam("ctoken", query["ctoken"]);
-    if (query["limit"]) addQueryParam("limit", query["limit"]);
-    if (query["status"]) addQueryParam("status", query["status"]);
-    if (query["review_status"]) addQueryParam("review_status", query["review_status"]);
-    if (query["title"]) addQueryParam("title", query["title"]);
-    if (query["parties.name_in_agreement"])
-      addQueryParam("parties.name_in_agreement", query["parties.name_in_agreement"]);
-    if (query["source_name"]) addQueryParam("source_name", query["source_name"]);
-    if (query["$filter"]) addQueryParam("$filter", query["$filter"]);
-    if (query["sort"]) addQueryParam("sort", query["sort"]);
-    if (query["direction"]) addQueryParam("direction", query["direction"]);
+    const ctoken = getStringParam(q["ctoken"]);
+    if (ctoken) params.set("ctoken", ctoken);
 
-    const params = new URLSearchParams(queryPairs);
+    const limit = getStringParam(q["limit"]);
+    if (limit) params.set("limit", limit);
+
+    const status = getStringParam(q["status"]);
+    if (status) params.set("status", status);
+
+    const reviewStatus = getStringParam(q["review_status"]);
+    if (reviewStatus) params.set("review_status", reviewStatus);
+
+    const title = getStringParam(q["title"]);
+    if (title) params.set("title", title);
+
+    const partiesName = getStringParam(q["parties.name_in_agreement"]);
+    if (partiesName) params.set("parties.name_in_agreement", partiesName);
+
+    const sourceName = getStringParam(q["source_name"]);
+    if (sourceName) params.set("source_name", sourceName);
+
+    const filterVal = getStringParam(q["$filter"]);
+    if (filterVal) params.set("$filter", filterVal);
+
+    const sort = getStringParam(q["sort"]);
+    if (sort) params.set("sort", sort);
+
+    const direction = getStringParam(q["direction"]);
+    if (direction) params.set("direction", direction);
+
     const url = `${DOCUSIGN_BASE_URL}/accounts/${accountId}/agreements${params.toString() ? `?${params}` : ""}`;
 
     const apiRes: any = await fetch(url, {
