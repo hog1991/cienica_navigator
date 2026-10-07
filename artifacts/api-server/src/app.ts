@@ -7,7 +7,7 @@ import { logger } from "./lib/logger";
 const app: Express = express();
 
 app.use(
-  pinoHttp as any({
+  (pinoHttp as any)({
     logger,
     serializers: {
       req(req) {
