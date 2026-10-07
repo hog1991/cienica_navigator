@@ -1,11 +1,11 @@
-import express, { Router, type IRouter, type Request, type Response } from "express";
+import { Router, type IRouter, type Request, type Response as ExpressResponse } from "express";
 import { getToken } from "../lib/docusign-token.js";
 
 const router: IRouter = Router();
 
 const DOCUSIGN_BASE_URL = "https://api-d.docusign.com/v1";
 
-router.get("/docusign/auth-status", (_req: Request, res: Response) => {
+router.get("/docusign/auth-status", (_req: Request, res: ExpressResponseResponse) => {
   const token = getToken();
   const accountId = process.env["DOCUSIGN_ACCOUNT_ID"];
   res.json({
@@ -15,7 +15,7 @@ router.get("/docusign/auth-status", (_req: Request, res: Response) => {
   });
 });
 
-router.get("/docusign/debug-info", (_req: Request, res: Response) => {
+router.get("/docusign/debug-info", (_req: Request, res: ExpressResponseResponse) => {
   const token = getToken();
   const accountId = process.env["DOCUSIGN_ACCOUNT_ID"];
   const clientId = process.env["DOCUSIGN_CLIENT_ID"];
@@ -59,7 +59,7 @@ router.get("/docusign/debug-info", (_req: Request, res: Response) => {
 // Download proxy — fetches a Navigator document using the stored Bearer token
 // and streams it back to the browser as a file download.
 // Usage: GET /api/docusign/document?href=<relative-or-absolute-path>&filename=<name>
-router.get("/docusign/document", async (req: Request, res: Response) => {
+router.get("/docusign/document", async (req: Request, res: ExpressResponseResponse) => {
   const tokenRecord = getToken();
   if (!tokenRecord) {
     res.status(401).json({ error: "Not authenticated", code: "unauthenticated" });
