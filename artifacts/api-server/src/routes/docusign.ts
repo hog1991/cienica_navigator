@@ -84,7 +84,11 @@ router.get("/docusign/document", async (req: Request, res: any) => {
     : `https://api-d.docusign.com/v1${href.startsWith("/") ? "" : "/"}${href}`;
 
   const rawFilename = req.query["filename"];
-  const filename = (typeof rawFilename === "string" ? rawFilename : Array.isArray(rawFilename) ? String(rawFilename[0]) : undefined) ?? "agreement.pdf";
+  const filename = typeof rawFilename === "string" 
+    ? rawFilename 
+    : Array.isArray(rawFilename) && typeof rawFilename[0] === "string" 
+      ? rawFilename[0] 
+      : "agreement.pdf";
 
   const isAzureBlob = fullUrl.includes(".blob.core.windows.net");
   const needsAuth = !isAzureBlob;
