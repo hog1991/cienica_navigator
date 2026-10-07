@@ -401,7 +401,7 @@ router.post("/docusign/upload/complete", async (req: Request, res: any) => {
 router.delete("/docusign/agreements/:agreementId", async (req: Request, res: any) => {
   const tokenRecord = getToken();
   if (!tokenRecord) {
-    res.status(401).json({ error: "Not authenticated" });
+    res.status(401).json({ error: "Not authenticated" ;)
     return;
   }
   const accountId = process.env["DOCUSIGN_ACCOUNT_ID"];
