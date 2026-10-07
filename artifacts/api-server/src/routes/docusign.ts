@@ -1,11 +1,11 @@
-import express, { Router, type IRouter, type Request, type Response as ExpressResponse } from "express";
+import express, { Router, type IRouter, type Request } from "express";
 import { getToken } from "../lib/docusign-token.js";
 
 const router: IRouter = Router();
 
 const DOCUSIGN_BASE_URL = "https://api-d.docusign.com/v1";
 
-router.get("/docusign/auth-status", (_req: Request, res: ExpressResponse) => {
+router.get("/docusign/auth-status", (_req: Request, res: any) => {
   const token = getToken();
   const accountId = process.env["DOCUSIGN_ACCOUNT_ID"];
   res.json({
@@ -15,7 +15,7 @@ router.get("/docusign/auth-status", (_req: Request, res: ExpressResponse) => {
   });
 });
 
-router.get("/docusign/debug-info", (_req: Request, res: ExpressResponse) => {
+router.get("/docusign/debug-info", (_req: Request, res: any) => {
   const token = getToken();
   const accountId = process.env["DOCUSIGN_ACCOUNT_ID"];
   const clientId = process.env["DOCUSIGN_CLIENT_ID"];
@@ -64,7 +64,7 @@ router.get("/docusign/debug-info", (_req: Request, res: ExpressResponse) => {
 
 // Download proxy — fetches a Navigator document using the stored Bearer token
 // and streams it back to the browser as a file download.
-router.get("/docusign/document", async (req: Request, res: ExpressResponse) => {
+router.get("/docusign/document", async (req: Request, res: any) => {
   const tokenRecord = getToken();
   if (!tokenRecord) {
     res.status(401).json({ error: "Not authenticated", code: "unauthenticated" });
@@ -118,7 +118,7 @@ router.get("/docusign/document", async (req: Request, res: ExpressResponse) => {
   }
 });
 
-router.get("/docusign/agreements/:agreementId", async (req: Request, res: ExpressResponse) => {
+router.get("/docusign/agreements/:agreementId", async (req: Request, res: any) => {
   const accountId = process.env["DOCUSIGN_ACCOUNT_ID"];
   const { agreementId } = req.params;
 
@@ -159,7 +159,7 @@ router.get("/docusign/agreements/:agreementId", async (req: Request, res: Expres
   }
 });
 
-router.get("/docusign/agreements", async (req: Request, res: ExpressResponse) => {
+router.get("/docusign/agreements", async (req: Request, res: any) => {
   const accountId = process.env["DOCUSIGN_ACCOUNT_ID"];
 
   if (!accountId) {
@@ -178,17 +178,22 @@ router.get("/docusign/agreements", async (req: Request, res: ExpressResponse) =>
 
   try {
     const params = new URLSearchParams();
-    if (req.query["ctoken"]) params.set("ctoken", String(req.query["ctoken"]));
-    if (req.query["limit"]) params.set("limit", String(req.query["limit"]));
-    if (req.query["status"]) params.set("status", String(req.query["status"]));
-    if (req.query["review_status"]) params.set("review_status", String(req.query["review_status"]));
-    if (req.query["title"]) params.set("title", String(req.query["title"]));
+    const setParam = (key: string, val: unknown) => {
+      if (typeof val === "string") params.set(key, val);
+      else if (typeof val === "number" || typeof val === "boolean") params.set(key, String(val));
+    };
+
+    if (req.query["ctoken"]) setParam("ctoken", req.query["ctoken"]);
+    if (req.query["limit"]) setParam("limit", req.query["limit"]);
+    if (req.query["status"]) setParam("status", req.query["status"]);
+    if (req.query["review_status"]) setParam("review_status", req.query["review_status"]);
+    if (req.query["title"]) setParam("title", req.query["title"]);
     if (req.query["parties.name_in_agreement"])
-      params.set("parties.name_in_agreement", String(req.query["parties.name_in_agreement"]));
-    if (req.query["source_name"]) params.set("source_name", String(req.query["source_name"]));
-    if (req.query["$filter"]) params.set("$filter", String(req.query["$filter"]));
-    if (req.query["sort"]) params.set("sort", String(req.query["sort"]));
-    if (req.query["direction"]) params.set("direction", String(req.query["direction"]));
+      setParam("parties.name_in_agreement", req.query["parties.name_in_agreement"]);
+    if (req.query["source_name"]) setParam("source_name", req.query["source_name"]);
+    if (req.query["$filter"]) setParam("$filter", req.query["$filter"]);
+    if (req.query["sort"]) setParam("sort", req.query["sort"]);
+    if (req.query["direction"]) setParam("direction", req.query["direction"]);
 
     const url = `${DOCUSIGN_BASE_URL}/accounts/${accountId}/agreements${params.toString() ? `?${params}` : ""}`;
 
@@ -222,7 +227,7 @@ router.get("/docusign/agreements", async (req: Request, res: ExpressResponse) =>
 });
 
 // ─── Upload: Step 1 — create bulk upload job ─────────────────────────────────
-router.post("/docusign/upload/start", async (req: Request, res: ExpressResponse) => {
+router.post("/docusign/upload/start", async (req: Request, res: any) => {
   const tokenRecord = getToken();
   if (!tokenRecord) {
     res.status(401).json({ error: "Not authenticated" });
@@ -281,7 +286,7 @@ router.post("/docusign/upload/start", async (req: Request, res: ExpressResponse)
 router.post(
   "/docusign/upload/file",
   express.raw({ type: "*/*", limit: "50mb" }),
-  async (req: Request, res: ExpressResponse) => {
+  async (req: Request, res: any) => {
     const uploadUrl = req.query["upload_url"] as string | undefined;
     const filename = req.query["filename"] as string | undefined;
     if (!uploadUrl) {
@@ -319,7 +324,7 @@ router.post(
 );
 
 // ─── Upload: Step 3 — complete bulk upload job ───────────────────────────────
-router.post("/docusign/upload/complete", async (req: Request, res: ExpressResponse) => {
+router.post("/docusign/upload/complete", async (req: Request, res: any) => {
   const tokenRecord = getToken();
   if (!tokenRecord) {
     res.status(401).json({ error: "Not authenticated" });
@@ -363,7 +368,7 @@ router.post("/docusign/upload/complete", async (req: Request, res: ExpressRespon
 });
 
 // ─── Delete agreement ─────────────────────────────────────────────────────────
-router.delete("/docusign/agreements/:agreementId", async (req: Request, res: ExpressResponse) => {
+router.delete("/docusign/agreements/:agreementId", async (req: Request, res: any) => {
   const tokenRecord = getToken();
   if (!tokenRecord) {
     res.status(401).json({ error: "Not authenticated" });
