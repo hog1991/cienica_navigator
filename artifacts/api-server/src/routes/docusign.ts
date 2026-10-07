@@ -190,13 +190,13 @@ router.get("/docusign/agreements", async (req: Request, res: any) => {
 
   try {
     const query = req.query as Record<string, any>;
-    const params = new URLSearchParams();
+    const queryPairs: [string, string][] = [];
     
     const addQueryParam = (key: string, val: unknown) => {
       const raw = Array.isArray(val) ? val[0] : val;
-      const resolved: string = typeof raw === "string" ? raw : typeof raw === "number" || typeof raw === "boolean" ? String(raw) : "";
+      const resolved = typeof raw === "string" ? raw : typeof raw === "number" || typeof raw === "boolean" ? String(raw) : "";
       if (resolved.length > 0) {
-        params.set(key, resolved);
+        queryPairs.push([key, resolved]);
       }
     };
 
@@ -212,6 +212,7 @@ router.get("/docusign/agreements", async (req: Request, res: any) => {
     if (query["sort"]) addQueryParam("sort", query["sort"]);
     if (query["direction"]) addQueryParam("direction", query["direction"]);
 
+    const params = new URLSearchParams(queryPairs);
     const url = `${DOCUSIGN_BASE_URL}/accounts/${accountId}/agreements${params.toString() ? `?${params}` : ""}`;
 
     const apiRes: any = await fetch(url, {
