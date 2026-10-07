@@ -61,7 +61,7 @@ router.get("/docusign/auth/callback", async (req: Request, res: Response) => {
   const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
 
   try {
-    const tokenRes = await fetch(`${DOCUSIGN_AUTH_HOST}/oauth/token`, {
+    const tokenRes: any = await fetch(`${DOCUSIGN_AUTH_HOST}/oauth/token`, {
       method: "POST",
       headers: {
         Authorization: `Basic ${credentials}`,
@@ -88,7 +88,7 @@ router.get("/docusign/auth/callback", async (req: Request, res: Response) => {
 
     let userInfo: StoredToken["userInfo"] = undefined;
     try {
-      const userRes = await fetch(`${DOCUSIGN_AUTH_HOST}/oauth/userinfo`, {
+      const userRes: any = await fetch(`${DOCUSIGN_AUTH_HOST}/oauth/userinfo`, {
         headers: { Authorization: `Bearer ${tokenData.access_token}` },
       });
       if (userRes.ok) {
