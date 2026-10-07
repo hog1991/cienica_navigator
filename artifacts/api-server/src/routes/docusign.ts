@@ -191,12 +191,12 @@ router.get("/docusign/agreements", async (req: Request, res: any) => {
   try {
     const query = req.query as Record<string, any>;
     const params = new URLSearchParams();
+    
     const addQueryParam = (key: string, val: unknown) => {
-      const resolved = Array.isArray(val) ? val[0] : val;
-      if (typeof resolved === "string" && resolved.length > 0) {
+      const raw = Array.isArray(val) ? val[0] : val;
+      const resolved: string = typeof raw === "string" ? raw : typeof raw === "number" || typeof raw === "boolean" ? String(raw) : "";
+      if (resolved.length > 0) {
         params.set(key, resolved);
-      } else if (typeof resolved === "number" || typeof resolved === "boolean") {
-        params.set(key, String(resolved));
       }
     };
 
