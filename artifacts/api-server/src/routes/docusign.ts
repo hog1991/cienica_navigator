@@ -182,21 +182,21 @@ router.get("/docusign/agreements", async (req: Request, res: any) => {
     const params = new URLSearchParams();
     const setParam = (key: string, val: unknown) => {
       const resolved = Array.isArray(val) ? val[0] : val;
-      if (typeof resolved === "string") params.set(key, resolved);
+      if (typeof resolved === "string" && resolved.length > 0) params.set(key, resolved);
       else if (typeof resolved === "number" || typeof resolved === "boolean") params.set(key, String(resolved));
     };
 
-    if (req.query["ctoken"]) setParam("ctoken", req.query["ctoken"]);
-    if (req.query["limit"]) setParam("limit", req.query["limit"]);
-    if (req.query["status"]) setParam("status", req.query["status"]);
-    if (req.query["review_status"]) setParam("review_status", req.query["review_status"]);
-    if (req.query["title"]) setParam("title", req.query["title"]);
+    if (req.query["ctoken"]) setParam("ctoken", String(req.query["ctoken"]));
+    if (req.query["limit"]) setParam("limit", String(req.query["limit"]));
+    if (req.query["status"]) setParam("status", String(req.query["status"]));
+    if (req.query["review_status"]) setParam("review_status", String(req.query["review_status"]));
+    if (req.query["title"]) setParam("title", String(req.query["title"]));
     if (req.query["parties.name_in_agreement"])
-      setParam("parties.name_in_agreement", req.query["parties.name_in_agreement"]);
-    if (req.query["source_name"]) setParam("source_name", req.query["source_name"]);
-    if (req.query["$filter"]) setParam("$filter", req.query["$filter"]);
-    if (req.query["sort"]) setParam("sort", req.query["sort"]);
-    if (req.query["direction"]) setParam("direction", req.query["direction"]);
+      setParam("parties.name_in_agreement", String(req.query["parties.name_in_agreement"]));
+    if (req.query["source_name"]) setParam("source_name", String(req.query["source_name"]));
+    if (req.query["$filter"]) setParam("$filter", String(req.query["$filter"]));
+    if (req.query["sort"]) setParam("sort", String(req.query["sort"]));
+    if (req.query["direction"]) setParam("direction", String(req.query["direction"]));
 
     const url = `${DOCUSIGN_BASE_URL}/accounts/${accountId}/agreements${params.toString() ? `?${params}` : ""}`;
 
