@@ -1,11 +1,11 @@
-import { Router, type IRouter, type Request, type Response as ExpressResponse } from "express";
+import express, { Router, type IRouter, type Request, type Response as ExpressResponse } from "express";
 import { getToken } from "../lib/docusign-token.js";
 
 const router: IRouter = Router();
 
 const DOCUSIGN_BASE_URL = "https://api-d.docusign.com/v1";
 
-router.get("/docusign/auth-status", (_req: Request, res: ExpressResponseResponse) => {
+router.get("/docusign/auth-status", (_req: Request, res: ExpressResponse) => {
   const token = getToken();
   const accountId = process.env["DOCUSIGN_ACCOUNT_ID"];
   res.json({
@@ -15,7 +15,7 @@ router.get("/docusign/auth-status", (_req: Request, res: ExpressResponseResponse
   });
 });
 
-router.get("/docusign/debug-info", (_req: Request, res: ExpressResponseResponse) => {
+router.get("/docusign/debug-info", (_req: Request, res: ExpressResponse) => {
   const token = getToken();
   const accountId = process.env["DOCUSIGN_ACCOUNT_ID"];
   const clientId = process.env["DOCUSIGN_CLIENT_ID"];
@@ -43,7 +43,13 @@ router.get("/docusign/debug-info", (_req: Request, res: ExpressResponseResponse)
       mode: authMode,
       authenticated: !!token,
     },
-    scopes: ["adm_store_unified_repo_read", "adm_store_unified_repo_write", "public_dms_document_read", "document_uploader_write", "document_uploader_read"],
+    scopes: [
+      "adm_store_unified_repo_read",
+      "adm_store_unified_repo_write",
+      "public_dms_document_read",
+      "document_uploader_write",
+      "document_uploader_read",
+    ],
     api: {
       baseUrl: "https://api-d.docusign.com/v1",
       environment: "sandbox (developer)",
@@ -58,8 +64,7 @@ router.get("/docusign/debug-info", (_req: Request, res: ExpressResponseResponse)
 
 // Download proxy — fetches a Navigator document using the stored Bearer token
 // and streams it back to the browser as a file download.
-// Usage: GET /api/docusign/document?href=<relative-or-absolute-path>&filename=<name>
-router.get("/docusign/document", async (req: Request, res: ExpressResponseResponse) => {
+router.get("/docusign/document", async (req: Request, res: ExpressResponse) => {
   const tokenRecord = getToken();
   if (!tokenRecord) {
     res.status(401).json({ error: "Not authenticated", code: "unauthenticated" });
@@ -72,7 +77,6 @@ router.get("/docusign/document", async (req: Request, res: ExpressResponseRespon
     return;
   }
 
-  // Build full URL — href may be relative (e.g. /accounts/…) or absolute
   const isAbsolute = href.startsWith("http");
   const fullUrl = isAbsolute
     ? href
@@ -80,10 +84,6 @@ router.get("/docusign/document", async (req: Request, res: ExpressResponseRespon
 
   const filename = (req.query["filename"] as string | undefined) ?? "agreement.pdf";
 
-  // Determine whether to send the Bearer token:
-  // - DocuSign-hosted endpoints (*.docusign.net, api-d.docusign.com, etc.) → always send token
-  // - Azure Blob SAS URLs (*.blob.core.windows.net) → no auth (signature is in the URL)
-  // - Relative paths → always send token (it's a Navigator API path)
   const isAzureBlob = fullUrl.includes(".blob.core.windows.net");
   const needsAuth = !isAzureBlob;
 
@@ -105,9 +105,9 @@ router.get("/docusign/document", async (req: Request, res: ExpressResponseRespon
 
     res.setHeader("Content-Type", contentType);
     res.setHeader("Content-Disposition", `attachment; filename="${filename.replace(/"/g, "'")}"`);
-   if (contentLength) {
-  res.setHeader("Content-Length", contentLength);
-}
+    if (contentLength) {
+      res.setHeader("Content-Length", contentLength);
+    }
 
     const buffer = await apiRes.arrayBuffer();
     res.send(Buffer.from(buffer));
@@ -118,7 +118,7 @@ router.get("/docusign/document", async (req: Request, res: ExpressResponseRespon
   }
 });
 
-router.get("/docusign/agreements/:agreementId", async (req: Request, res: Response) => {
+router.get("/docusign/agreements/:agreementId", async (req: Request, res: ExpressResponse) => {
   const accountId = process.env["DOCUSIGN_ACCOUNT_ID"];
   const { agreementId } = req.params;
 
@@ -159,7 +159,7 @@ router.get("/docusign/agreements/:agreementId", async (req: Request, res: Respon
   }
 });
 
-router.get("/docusign/agreements", async (req: Request, res: Response) => {
+router.get("/docusign/agreements", async (req: Request, res: ExpressResponse) => {
   const accountId = process.env["DOCUSIGN_ACCOUNT_ID"];
 
   if (!accountId) {
@@ -178,19 +178,15 @@ router.get("/docusign/agreements", async (req: Request, res: Response) => {
 
   try {
     const params = new URLSearchParams();
-    // Pagination — Navigator API uses 'ctoken' for continuation, not 'cursor'
     if (req.query["ctoken"]) params.set("ctoken", String(req.query["ctoken"]));
     if (req.query["limit"]) params.set("limit", String(req.query["limit"]));
-    // Direct filter params
     if (req.query["status"]) params.set("status", String(req.query["status"]));
     if (req.query["review_status"]) params.set("review_status", String(req.query["review_status"]));
     if (req.query["title"]) params.set("title", String(req.query["title"]));
     if (req.query["parties.name_in_agreement"])
       params.set("parties.name_in_agreement", String(req.query["parties.name_in_agreement"]));
     if (req.query["source_name"]) params.set("source_name", String(req.query["source_name"]));
-    // OData $filter string (built by the client)
     if (req.query["$filter"]) params.set("$filter", String(req.query["$filter"]));
-    // Sort
     if (req.query["sort"]) params.set("sort", String(req.query["sort"]));
     if (req.query["direction"]) params.set("direction", String(req.query["direction"]));
 
@@ -205,7 +201,11 @@ router.get("/docusign/agreements", async (req: Request, res: Response) => {
 
     const rawText = await apiRes.text();
     let data: unknown;
-    try { data = JSON.parse(rawText); } catch { data = rawText; }
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      data = rawText;
+    }
 
     if (!apiRes.ok) {
       req.log.warn({ status: apiRes.status, rawText }, "Docusign API error");
@@ -222,15 +222,24 @@ router.get("/docusign/agreements", async (req: Request, res: Response) => {
 });
 
 // ─── Upload: Step 1 — create bulk upload job ─────────────────────────────────
-router.post("/docusign/upload/start", async (req: Request, res: Response) => {
+router.post("/docusign/upload/start", async (req: Request, res: ExpressResponse) => {
   const tokenRecord = getToken();
-  if (!tokenRecord) { res.status(401).json({ error: "Not authenticated" }); return; }
+  if (!tokenRecord) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
   const accountId = process.env["DOCUSIGN_ACCOUNT_ID"];
-  if (!accountId) { res.status(500).json({ error: "DOCUSIGN_ACCOUNT_ID not configured" }); return; }
+  if (!accountId) {
+    res.status(500).json({ error: "DOCUSIGN_ACCOUNT_ID not configured" });
+    return;
+  }
 
   const body = req.body as { count?: number };
   const count = Number(body.count ?? 0);
-  if (!count || count < 1) { res.status(400).json({ error: "count must be >= 1" }); return; }
+  if (!count || count < 1) {
+    res.status(400).json({ error: "count must be >= 1" });
+    return;
+  }
 
   try {
     const url = `${DOCUSIGN_BASE_URL}/accounts/${accountId}/upload/jobs`;
@@ -243,10 +252,13 @@ router.post("/docusign/upload/start", async (req: Request, res: Response) => {
       body: JSON.stringify({ expected_number_of_docs: count }),
     });
 
-    // Always read as text first to avoid JSON parse crashes on error pages
     const rawText = await apiRes.text();
     let data: unknown;
-    try { data = JSON.parse(rawText); } catch { data = rawText; }
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      data = rawText;
+    }
 
     if (!apiRes.ok) {
       req.log.warn({ status: apiRes.status, rawText, url }, "Bulk upload job creation failed");
@@ -266,14 +278,16 @@ router.post("/docusign/upload/start", async (req: Request, res: Response) => {
 });
 
 // ─── Upload: Step 2 — proxy PUT to Azure Blob SAS URL ────────────────────────
-// Accepts raw binary body; upload_url and filename are query params.
 router.post(
   "/docusign/upload/file",
   express.raw({ type: "*/*", limit: "50mb" }),
-  async (req: Request, res: Response) => {
+  async (req: Request, res: ExpressResponse) => {
     const uploadUrl = req.query["upload_url"] as string | undefined;
     const filename = req.query["filename"] as string | undefined;
-    if (!uploadUrl) { res.status(400).json({ error: "Missing upload_url" }); return; }
+    if (!uploadUrl) {
+      res.status(400).json({ error: "Missing upload_url" });
+      return;
+    }
 
     try {
       const blob = req.body as Buffer;
@@ -305,14 +319,23 @@ router.post(
 );
 
 // ─── Upload: Step 3 — complete bulk upload job ───────────────────────────────
-router.post("/docusign/upload/complete", async (req: Request, res: Response) => {
+router.post("/docusign/upload/complete", async (req: Request, res: ExpressResponse) => {
   const tokenRecord = getToken();
-  if (!tokenRecord) { res.status(401).json({ error: "Not authenticated" }); return; }
+  if (!tokenRecord) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
   const accountId = process.env["DOCUSIGN_ACCOUNT_ID"];
-  if (!accountId) { res.status(500).json({ error: "DOCUSIGN_ACCOUNT_ID not configured" }); return; }
+  if (!accountId) {
+    res.status(500).json({ error: "DOCUSIGN_ACCOUNT_ID not configured" });
+    return;
+  }
 
   const { job_id } = req.body as { job_id?: string };
-  if (!job_id) { res.status(400).json({ error: "Missing job_id" }); return; }
+  if (!job_id) {
+    res.status(400).json({ error: "Missing job_id" });
+    return;
+  }
 
   try {
     const url = `${DOCUSIGN_BASE_URL}/accounts/${accountId}/upload/jobs/${encodeURIComponent(job_id)}/actions/complete`;
@@ -340,11 +363,17 @@ router.post("/docusign/upload/complete", async (req: Request, res: Response) => 
 });
 
 // ─── Delete agreement ─────────────────────────────────────────────────────────
-router.delete("/docusign/agreements/:agreementId", async (req: Request, res: Response) => {
+router.delete("/docusign/agreements/:agreementId", async (req: Request, res: ExpressResponse) => {
   const tokenRecord = getToken();
-  if (!tokenRecord) { res.status(401).json({ error: "Not authenticated" }); return; }
+  if (!tokenRecord) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
   const accountId = process.env["DOCUSIGN_ACCOUNT_ID"];
-  if (!accountId) { res.status(500).json({ error: "DOCUSIGN_ACCOUNT_ID not configured" }); return; }
+  if (!accountId) {
+    res.status(500).json({ error: "DOCUSIGN_ACCOUNT_ID not configured" });
+    return;
+  }
 
   const { agreementId } = req.params;
 
