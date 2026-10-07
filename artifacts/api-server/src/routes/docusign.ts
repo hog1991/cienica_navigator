@@ -105,7 +105,9 @@ router.get("/docusign/document", async (req: Request, res: Response) => {
 
     res.setHeader("Content-Type", contentType);
     res.setHeader("Content-Disposition", `attachment; filename="${filename.replace(/"/g, "'")}"`);
-    if (contentLength) res.setHeader("Content-Length", contentLength);
+   if (contentLength) {
+  res.setHeader("Content-Length", contentLength);
+}
 
     const buffer = await apiRes.arrayBuffer();
     res.send(Buffer.from(buffer));
