@@ -294,10 +294,18 @@ router.post(
   express.raw({ type: "*/*", limit: "50mb" }),
   async (req: Request, res: any) => {
     const rawUploadUrl = req.query["upload_url"];
-    const uploadUrl = typeof rawUploadUrl === "string" ? rawUploadUrl : Array.isArray(rawUploadUrl) ? String(rawUploadUrl[0]) : undefined;
+    const uploadUrl = typeof rawUploadUrl === "string" 
+      ? rawUploadUrl 
+      : Array.isArray(rawUploadUrl) && typeof rawUploadUrl[0] === "string" 
+        ? rawUploadUrl[0] 
+        : undefined;
     
     const rawFilename = req.query["filename"];
-    const filename = typeof rawFilename === "string" ? rawFilename : Array.isArray(rawFilename) ? String(rawFilename[0]) : undefined;
+    const filename = typeof rawFilename === "string" 
+      ? rawFilename 
+      : Array.isArray(rawFilename) && typeof rawFilename[0] === "string" 
+        ? rawFilename[0] 
+        : undefined;
 
     if (!uploadUrl) {
       res.status(400).json({ error: "Missing upload_url" });
