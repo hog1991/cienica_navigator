@@ -71,7 +71,8 @@ router.get("/docusign/document", async (req: Request, res: any) => {
     return;
   }
 
-  const href = req.query["href"] as string | undefined;
+  const rawHref = req.query["href"];
+  const href = typeof rawHref === "string" ? rawHref : Array.isArray(rawHref) ? String(rawHref[0]) : undefined;
   if (!href) {
     res.status(400).json({ error: "Missing href query param" });
     return;
@@ -82,7 +83,8 @@ router.get("/docusign/document", async (req: Request, res: any) => {
     ? href
     : `https://api-d.docusign.com/v1${href.startsWith("/") ? "" : "/"}${href}`;
 
-  const filename = (req.query["filename"] as string | undefined) ?? "agreement.pdf";
+  const rawFilename = req.query["filename"];
+  const filename = (typeof rawFilename === "string" ? rawFilename : Array.isArray(rawFilename) ? String(rawFilename[0]) : undefined) ?? "agreement.pdf";
 
   const isAzureBlob = fullUrl.includes(".blob.core.windows.net");
   const needsAuth = !isAzureBlob;
@@ -288,8 +290,12 @@ router.post(
   "/docusign/upload/file",
   express.raw({ type: "*/*", limit: "50mb" }),
   async (req: Request, res: any) => {
-    const uploadUrl = req.query["upload_url"] as string | undefined;
-    const filename = req.query["filename"] as string | undefined;
+    const rawUploadUrl = req.query["upload_url"];
+    const uploadUrl = typeof rawUploadUrl === "string" ? rawUploadUrl : Array.isArray(rawUploadUrl) ? String(rawUploadUrl[0]) : undefined;
+    
+    const rawFilename = req.query["filename"];
+    const filename = typeof rawFilename === "string" ? rawFilename : Array.isArray(rawFilename) ? String(rawFilename[0]) : undefined;
+
     if (!uploadUrl) {
       res.status(400).json({ error: "Missing upload_url" });
       return;
