@@ -72,7 +72,12 @@ router.get("/docusign/document", async (req: Request, res: any) => {
   }
 
   const rawHref = req.query["href"];
-  const href = typeof rawHref === "string" ? rawHref : Array.isArray(rawHref) ? String(rawHref[0]) : undefined;
+  const href = typeof rawHref === "string" 
+    ? rawHref 
+    : Array.isArray(rawHref) && typeof rawHref[0] === "string" 
+      ? rawHref[0] 
+      : undefined;
+
   if (!href) {
     res.status(400).json({ error: "Missing href query param" });
     return;
