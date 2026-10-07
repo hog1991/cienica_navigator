@@ -181,9 +181,9 @@ router.get("/docusign/agreements", async (req: Request, res: any) => {
   try {
     const params = new URLSearchParams();
     const setParam = (key: string, val: unknown) => {
-      if (typeof val === "string") params.set(key, val);
-      else if (Array.isArray(val) && typeof val[0] === "string") params.set(key, val[0]);
-      else if (typeof val === "number" || typeof val === "boolean") params.set(key, String(val));
+      const resolved = Array.isArray(val) ? val[0] : val;
+      if (typeof resolved === "string") params.set(key, resolved);
+      else if (typeof resolved === "number" || typeof resolved === "boolean") params.set(key, String(resolved));
     };
 
     if (req.query["ctoken"]) setParam("ctoken", req.query["ctoken"]);
