@@ -189,26 +189,21 @@ router.get("/docusign/agreements", async (req: Request, res: any) => {
 
   try {
     const params = new URLSearchParams();
-    const addQueryParam = (key: string, val: unknown) => {
-      const resolved = Array.isArray(val) ? val[0] : val;
-      if (typeof resolved === "string" && resolved.length > 0) {
-        params.set(key, resolved);
-      } else if (typeof resolved === "number" || typeof resolved === "boolean") {
-        params.set(key, String(resolved));
-      }
+    const addQueryParam = (key: string, val: string | number | boolean) => {
+      params.set(key, String(val));
     };
 
-    if (req.query["ctoken"]) addQueryParam("ctoken", req.query["ctoken"]);
-    if (req.query["limit"]) addQueryParam("limit", req.query["limit"]);
-    if (req.query["status"]) addQueryParam("status", req.query["status"]);
-    if (req.query["review_status"]) addQueryParam("review_status", req.query["review_status"]);
-    if (req.query["title"]) addQueryParam("title", req.query["title"]);
+    if (req.query["ctoken"]) addQueryParam("ctoken", req.query["ctoken"] as string);
+    if (req.query["limit"]) addQueryParam("limit", req.query["limit"] as string);
+    if (req.query["status"]) addQueryParam("status", req.query["status"] as string);
+    if (req.query["review_status"]) addQueryParam("review_status", req.query["review_status"] as string);
+    if (req.query["title"]) addQueryParam("title", req.query["title"] as string);
     if (req.query["parties.name_in_agreement"])
-      addQueryParam("parties.name_in_agreement", req.query["parties.name_in_agreement"]);
-    if (req.query["source_name"]) addQueryParam("source_name", req.query["source_name"]);
-    if (req.query["$filter"]) addQueryParam("$filter", req.query["$filter"]);
-    if (req.query["sort"]) addQueryParam("sort", req.query["sort"]);
-    if (req.query["direction"]) addQueryParam("direction", req.query["direction"]);
+      addQueryParam("parties.name_in_agreement", req.query["parties.name_in_agreement"] as string);
+    if (req.query["source_name"]) addQueryParam("source_name", req.query["source_name"] as string);
+    if (req.query["$filter"]) addQueryParam("$filter", req.query["$filter"] as string);
+    if (req.query["sort"]) addQueryParam("sort", req.query["sort"] as string);
+    if (req.query["direction"]) addQueryParam("direction", req.query["direction"] as string);
 
     const url = `${DOCUSIGN_BASE_URL}/accounts/${accountId}/agreements${params.toString() ? `?${params}` : ""}`;
 
@@ -302,19 +297,8 @@ router.post(
   "/docusign/upload/file",
   express.raw({ type: "*/*", limit: "50mb" }),
   async (req: Request, res: any) => {
-    const rawUploadUrl = req.query["upload_url"];
-    const uploadUrl = typeof rawUploadUrl === "string" 
-      ? rawUploadUrl 
-      : Array.isArray(rawUploadUrl) && typeof rawUploadUrl[0] === "string" 
-        ? rawUploadUrl[0] 
-        : undefined;
-    
-    const rawFilename = req.query["filename"];
-    const filename = typeof rawFilename === "string" 
-      ? rawFilename 
-      : Array.isArray(rawFilename) && typeof rawFilename[0] === "string" 
-        ? rawFilename[0] 
-        : undefined;
+    const uploadUrl = req.query["upload_url"] as string;
+    const filename = req.query["filename"] as string | undefined;
 
     if (!uploadUrl) {
       res.status(400).json({ error: "Missing upload_url" });
