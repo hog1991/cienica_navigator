@@ -92,7 +92,7 @@ router.get("/docusign/document", async (req: Request, res: any) => {
     : {};
 
   try {
-    const apiRes = await fetch(fullUrl, { headers: fetchHeaders });
+    const apiRes: any = await fetch(fullUrl, { headers: fetchHeaders });
 
     if (!apiRes.ok) {
       req.log.warn({ status: apiRes.status, fullUrl, needsAuth }, "Document download failed");
@@ -136,7 +136,7 @@ router.get("/docusign/agreements/:agreementId", async (req: Request, res: any) =
   try {
     const url = `${DOCUSIGN_BASE_URL}/accounts/${accountId}/agreements/${encodeURIComponent(agreementId)}`;
 
-    const apiRes = await fetch(url, {
+    const apiRes: any = await fetch(url, {
       headers: {
         Authorization: `Bearer ${tokenRecord.accessToken}`,
         "Content-Type": "application/json",
@@ -180,6 +180,7 @@ router.get("/docusign/agreements", async (req: Request, res: any) => {
     const params = new URLSearchParams();
     const setParam = (key: string, val: unknown) => {
       if (typeof val === "string") params.set(key, val);
+      else if (Array.isArray(val) && typeof val[0] === "string") params.set(key, val[0]);
       else if (typeof val === "number" || typeof val === "boolean") params.set(key, String(val));
     };
 
@@ -197,7 +198,7 @@ router.get("/docusign/agreements", async (req: Request, res: any) => {
 
     const url = `${DOCUSIGN_BASE_URL}/accounts/${accountId}/agreements${params.toString() ? `?${params}` : ""}`;
 
-    const apiRes = await fetch(url, {
+    const apiRes: any = await fetch(url, {
       headers: {
         Authorization: `Bearer ${tokenRecord.accessToken}`,
         "Content-Type": "application/json",
@@ -248,7 +249,7 @@ router.post("/docusign/upload/start", async (req: Request, res: any) => {
 
   try {
     const url = `${DOCUSIGN_BASE_URL}/accounts/${accountId}/upload/jobs`;
-    const apiRes = await fetch(url, {
+    const apiRes: any = await fetch(url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${tokenRecord.accessToken}`,
@@ -298,7 +299,7 @@ router.post(
       const blob = req.body as Buffer;
       const mimeType = (req.headers["x-file-type"] as string | undefined) ?? "application/pdf";
 
-      const blobRes = await fetch(uploadUrl, {
+      const blobRes: any = await fetch(uploadUrl, {
         method: "PUT",
         headers: {
           "x-ms-blob-type": "BlockBlob",
@@ -344,7 +345,7 @@ router.post("/docusign/upload/complete", async (req: Request, res: any) => {
 
   try {
     const url = `${DOCUSIGN_BASE_URL}/accounts/${accountId}/upload/jobs/${encodeURIComponent(job_id)}/actions/complete`;
-    const apiRes = await fetch(url, {
+    const apiRes: any = await fetch(url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${tokenRecord.accessToken}`,
@@ -384,7 +385,7 @@ router.delete("/docusign/agreements/:agreementId", async (req: Request, res: any
 
   try {
     const url = `${DOCUSIGN_BASE_URL}/accounts/${accountId}/agreements/${encodeURIComponent(agreementId)}`;
-    const apiRes = await fetch(url, {
+    const apiRes: any = await fetch(url, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${tokenRecord.accessToken}` },
     });
